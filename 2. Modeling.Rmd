@@ -1,8 +1,8 @@
 ---
-title: "Analysis Code"
+title: "Modeling, Plotting and Regression Tables"
 author: "Mykola Dereva"
 date: "June 11, 2020"
-output: html_document
+output: github_document
 ---
 
 ```{r include=FALSE}
