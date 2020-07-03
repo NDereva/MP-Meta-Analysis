@@ -1,0 +1,811 @@
+---
+title: "Analysis Code"
+author: "Mykola Dereva"
+date: "June 11, 2020"
+output: html_document
+---
+
+```{r include=FALSE}
+rm(list=ls())
+
+library(tidyverse)
+library(readr)
+library(here)
+library(janitor)
+library(ggeasy)
+library(lmtest)
+library(sandwich)
+library(stargazer)
+library(car)
+
+set.seed(42)
+```
+
+
+load our cleaned data 
+
+```{r}
+clean <- readRDS(here("data", "clean data", "Clean_data.Rds"))
+```
+
+
+## Analysis
+
+Select only columns we need for the analysis.
+Rename columns once again. 
+And create columns with dummy variables
+
+```{r}
+glimpse(clean)
+```
+
+
+```{r}
+library(fastDummies)
+
+analysis <- clean %>%
+  select(approach, data_freq, mp_type, mp_index, sfarm_share,
+         industry_fct, country_fct, n_of_obs, after_2005, perish,
+         mean_pse, mean_pp, start_business) %>%
+  rename(app = approach,
+         freq = data_freq,
+         type = mp_type,
+         index = mp_index,
+         ind = industry_fct,
+         count = country_fct,
+         obs_n = n_of_obs) %>%
+  dummy_columns(select_columns = c("freq", "type", "ind", "count", "app"),
+                remove_selected_columns = TRUE)
+```
+
+final quick check of the data
+```{r}
+summary(analysis)
+```
+
+
+```{r}
+analysis %>%
+  summarise_all(funs(sum(is.na(.)))) %>%
+  gather(column, n_na)
+```
+
+
+
+
+
+
+```{r}
+summary(lm(index ~ ., data=analysis))
+```
+
+lets try automatic variable selection
+```{r}
+library(leaps)
+```
+
+```{r}
+auto.select <- regsubsets(log(index) ~ ., data=analysis,
+                          method = "exhaustive", nvmax = 20)
+```
+
+```{r}
+x <- summary(auto.select)
+
+plot(x$bic, main="BIC")
+plot(x$adjr2, main="Adj R^2")
+```
+
+
+So according BIC the oprimal number of variables is around 3
+While according to adj. R^2 - around 8-10
+
+```{r}
+plot(auto.select)
+```
+
+
+```{r}
+log_lm <- lm(log(index) ~ app_PTA + app_GIM +
+                 obs_n + 
+                 count_n_america +
+                 after_2005 +
+                 type_Oligopsony +
+                 ind_dairy + ind_meat + ind_cereals + ind_beverages + ind_oils +
+                 mean_pp + mean_pse, 
+         data=analysis)
+summary(log_lm)
+```
+
+```{r}
+bptest(log_lm)
+```
+
+
+```{r}
+plot(log_lm)
+```
+
+seems that we have hetoroscadasticity issue.
+Lets try to use heteroscadasticity robust se and to compare it with the regular
+
+```{r}
+log_lm_se <- vcovHC(log_lm, type = "HC")
+log_lm_se <- sqrt(diag(log_lm_se))
+log_lm_se
+```
+
+
+```{r}
+stargazer(log_lm, log_lm, se=list(NULL, log_lm_se),
+          column.labels=c("default SE","robust SE"), type = "text",
+          omit.stat=c("f", "ser", "n"), align = TRUE)
+```
+
+
+
+#### Without Log transformation
+```{r}
+lm <- lm(index ~ app_PTA + app_GIM +
+                 obs_n + 
+                 count_n_america +
+                 after_2005 +
+                 type_Oligopsony +
+                 ind_dairy + ind_meat + ind_cereals + ind_beverages + ind_oils, 
+         data=analysis)
+summary(lm)
+```
+
+```{r}
+bptest(lm)
+```
+
+```{r}
+plot(lm)
+```
+
+```{r}
+get_robust_se <- function(lm_model)  {
+  matrix <- vcovHC(lm_model, type = "HC0")
+  robust_se <- sqrt(diag(matrix))
+  return(robust_se)
+}
+
+get_robust_se(lm)
+```
+
+
+
+```{r}
+model_1 <- lm(log(index) ~ app_PTA + app_GIM + type_Oligopoly, 
+                        data=analysis)
+se_1 <- get_robust_se(model_1)
+
+model_2 <- lm(log(index) ~ app_PTA + app_GIM +
+                type_Oligopoly +
+                obs_n + after_2005 + 
+                freq_Yearly + freq_Quaterly +
+                count_n_america + count_europe, 
+         data=analysis)
+se_2 <- get_robust_se(model_2)
+
+model_3 <- lm(log(index) ~ app_PTA + app_GIM +
+                type_Oligopoly +
+                obs_n + after_2005 + 
+                freq_Yearly + freq_Quaterly +
+                count_n_america + count_europe +
+                ind_dairy + ind_meat + ind_beverages + ind_cereals + ind_oils, 
+         data=analysis)
+se_3 <- get_robust_se(model_3)
+
+
+model_4 <- lm(log(index) ~ app_PTA + app_GIM +
+                type_Oligopoly +
+                obs_n + 
+                count_n_america +
+                ind_dairy + ind_meat + ind_beverages + ind_cereals + ind_oils +
+                log(mean_pp) + log(mean_pse), 
+         data=analysis)
+se_4 <- get_robust_se(model_4)
+```
+
+#### Test for heteroscadasticity
+```{r}
+bptest(model_1)
+```
+```{r}
+bptest(model_2)
+```
+
+```{r}
+bptest(model_3)
+```
+
+```{r}
+bptest(model_4)
+```
+
+We can see that all 3 models expesed to the heteroscadasticity issue. 
+
+
+## Summary tables
+```{r}
+stargazer(model_1, model_2, model_3, model_4,
+          type = "text",
+          keep.stat=c("n", "rsq", "adj.rsq"), 
+          title = "Analysis Results",
+          #column.labels =  c("Model 1", "Model 2", "Model 3"),
+          dep.var.labels = "Market Power Index (log transformed)",
+          se = list(se_1, se_2, se_3, se_4),
+          align = TRUE,
+          intercept.bottom = FALSE
+          )
+```
+
+### F-test 
+
+In the regressions results neither of dummmies regarding frequency of observation was significant. 
+To be completely sure that they are do not have any influence on the MPI lets make an F test. 
+
+```{r}
+F.test.freq <-  linearHypothesis(model_3, c("freq_Yearly", "freq_Quaterly"), 
+                                 white.adjust = "hc1") # Heteroscad. robust F test
+F.test.freq
+```
+According to F test we cannot reject H:0 
+
+Lets check if type there influence of industry on the MPI 
+```{r}
+industry <- matchCoefs(model_3, "ind") # extract all industry dummies
+F.test.ind <-  linearHypothesis(model_3, industry, white.adjust = "hc1")
+F.test.ind
+```
+Therefore we reject 0 hypothesis that all types of industry have zero coeficient. 
+
+
+
+
+### Determinants of each approach 
+
+
+Finally lets make a linear model for each approahc and check if there is any significant differences in coefitients between them
+
+```{r}
+GIM <- lm(log(index) ~ type_Oligopoly +
+                obs_n + after_2005 + 
+                freq_Yearly + freq_Quaterly +
+                count_n_america + count_europe +
+                ind_dairy + ind_meat + ind_beverages + ind_cereals + ind_oils, 
+         data= subset(analysis, app_GIM == 1)) 
+
+PTA <- lm(log(index) ~ type_Oligopoly +
+                obs_n + after_2005 + 
+                freq_Yearly + freq_Quaterly +
+                count_n_america + count_europe +
+                ind_dairy + ind_meat + ind_beverages + ind_cereals + ind_oils, 
+         data= subset(analysis, app_PTA == 1))
+
+SFA <- lm(log(index) ~ type_Oligopoly +
+                obs_n + after_2005 + 
+                freq_Yearly + freq_Quaterly +
+                count_n_america + count_europe +
+                ind_dairy + ind_meat + ind_beverages + ind_cereals + ind_oils, 
+         data= subset(analysis, app_SFA == 1)) 
+```
+
+
+```{r}
+bptest(SFA)
+```
+```{r}
+bptest(PTA)
+```
+
+```{r}
+bptest(GIM)
+```
+
+According to bptest there is no evidence of heteroscadasticity, so we can use default SE
+
+
+```{r}
+stargazer(GIM, PTA, SFA,
+          type = "text",
+          omit.stat=c("f", "ser"), 
+          title = "Analysis Results",
+          column.labels =  c("GIM", "PTA", "SFA"),
+          dep.var.labels = "Market Power Index (log transformed)",
+          align = TRUE,
+          intercept.bottom = FALSE
+          )
+```
+
+
+I think I am done with the analysis
+
+
+# Summary Tables
+
+I will work with dataset "clean" again
+
+First of all lets create column with fitst author and year
+to uniquely identify an article
+```{r}
+clean <- clean %>%
+  mutate(article_ref = str_c(
+           str_match(authors, pattern = "^\\w[’]*\\w+" ),
+           " (", year, ")")
+         ) 
+
+head(clean$article_ref, 20)
+```
+
+
+summary table of all articles used in analysis
+
+
+
+```{r}
+#replace misspeled value
+clean <- clean %>%
+  mutate(data_freq = str_replace(data_freq, "Quaterly", "Quarterly")) 
+```
+
+### Table 1. List of studies
+```{r}
+table_1 <- clean %>%
+  group_by(article_ref, approach, mp_type, data_freq, period) %>%
+  summarise(N = n()) %>%
+  adorn_totals("row")
+
+head(table_1)
+```
+
+```{r include=FALSE}
+table_1 %>%
+  stargazer(type="html",
+            style = "aer",
+            title = "List of studies used",
+            summary = FALSE, rownames = FALSE,
+            out = "Tables/1.List of studies.doc"
+            )
+```
+
+
+### Table 2. Number of observations by country
+
+```{r}
+table_2 <-  clean %>%
+  mutate(country = as_factor(country) %>%
+           fct_infreq() %>%
+           fct_lump_min(min = 3) 
+         ) %>%
+  group_by(country) %>%
+  summarise(n = n(), 
+            mean_mp = round(mean(mp_index), 4)
+            ) %>%
+  ungroup() %>%
+  mutate(prop = round(n / sum(n) * 100, 2) ) %>%
+  select(country, n, prop, mean_mp) %>%
+  adorn_totals("row")
+
+table_2
+```
+
+```{r include=FALSE}
+table_2 %>%
+  stargazer(type="html",
+            style = "aer",
+            title = "Summary of MP observations by country",
+            summary = FALSE, rownames = FALSE,
+            out = "Tables/2.List of countries.doc")
+```
+
+Visualize the distribution
+
+```{r}
+clean %>%
+    mutate(country = as_factor(country) %>%
+           fct_infreq() %>%
+           fct_lump_min(min = 4) 
+         ) %>%
+  ggplot(aes(x = country,
+             y = mp_index,
+             color = approach)) + 
+  geom_jitter(width = 0.25, height = 0, alpha = 0.6, size = 2) +
+  theme_minimal() +
+  easy_legend_at("bottom") +
+  easy_remove_x_axis("title") +
+  labs(y = "Market Power Index",
+       title = "The distribution of MP indices by country",
+       caption = "Source: own representation",
+       color = "Approach:") 
+```
+```{r}
+ggsave(filename = "Plots/2. Country distribution plot.png",
+       dpi = "print",
+       height = 10, width = 15, units = "cm")
+```
+
+
+
+### Table 3 Number of observations by sector
+
+
+```{r}
+table_3 <- clean %>%
+  mutate(industry_fct = fct_infreq(industry_fct) %>%
+           fct_relevel("other", after = Inf)
+         ) %>%
+  group_by(industry_fct) %>%
+  summarise(n = n(), 
+            mean_mp = round(mean(mp_index), 4)
+            ) %>%
+  ungroup() %>%
+  mutate(prop = round(n / sum(n) * 100, 2),
+         industry_fct = str_to_title(industry_fct)) %>%
+  select(industry_fct, n, prop, mean_mp) %>%
+  adorn_totals("row")
+
+table_3
+```
+
+
+Save table
+```{r include=FALSE}
+table_3 %>%
+  stargazer(type="html",
+            style = "aer",
+            title = "Summary of MP observations by sector",
+            summary = FALSE, rownames = FALSE,
+            out = "Tables/3. List of industries.doc")
+```
+
+
+Visualise the distribution
+```{r}
+clean %>%
+  ggplot(aes(x = fct_reorder(industry_fct, mp_index, median) %>%
+               str_to_sentence(),
+             y = mp_index,
+             color = approach)) + 
+  geom_jitter(width = 0.25, height = 0, alpha = 0.6, size = 2) +
+  theme_minimal() +
+  easy_legend_at("bottom") +
+  easy_remove_x_axis("title") +
+  labs(y = "Market Power Index",
+       title = "The distribution of MP indices by sector",
+       caption = "Source: own representation",
+       color = "Approach:") 
+```
+Save plot 
+```{r}
+ggsave(filename = "Plots/3. Sector distribution plot.png",
+       dpi = "print",
+       height = 10, width = 15, units = "cm")
+```
+
+
+
+
+
+### Table 4: Number of observations by methodology
+
+```{r}
+table_4 <- clean %>%
+  group_by(approach) %>%
+  summarise(n = n(), 
+            mean_mp = round(mean(mp_index), 4)
+            ) %>%
+  ungroup() %>%
+  mutate(prop = round(n / sum(n) * 100, 2)) %>%
+  select(approach, n, prop, mean_mp) %>%
+  adorn_totals("row")
+
+table_4
+```
+
+
+```{r include=FALSE}
+table_4 %>%
+  stargazer(type="html",
+            style = "aer",
+            title = "Summary of MP observations by approach used",
+            summary = FALSE, rownames = FALSE,
+            out = "Tables/4. List of Methods.doc")
+```
+
+
+
+### Table 5: List of observarion frequency
+
+```{r}
+table_5 <- clean %>%
+  group_by(data_freq) %>%
+  summarise(n = n(), 
+            mean_mp = round(mean(mp_index), 4)
+            ) %>%
+  ungroup() %>%
+  mutate(prop = round(n / sum(n) * 100, 2)) %>%
+  select(data_freq, n, prop, mean_mp) %>%
+  arrange(-n) %>%
+  adorn_totals("row")
+
+table_5
+```
+
+```{r include=FALSE}
+table_5 %>%
+  stargazer(type="html",
+            style = "aer",
+            title = "Summary of MP observations by frequency",
+            summary = FALSE, rownames = FALSE,
+            out = "Tables/5. List of observarion frequency.doc")
+```
+
+
+
+### Table 6: Discriptive statistics of variables 
+
+```{r include=FALSE}
+analysis %>%
+  as.data.frame() %>%
+  stargazer(type="html",
+            style = "aer",
+            align = TRUE, nobs = FALSE,
+            out = "Tables/6. Descriprive stat.doc")
+```
+
+
+
+### Table 7: Regresiion table
+
+```{r}
+ind.var.names <- c("Intercept", "PTA", "GIM", "Oligopoly",
+                   "Observations Num.", "After 2005", "Yearly",
+                   "Quarterly", "USA", "Europe", "Dairy", "Meat",
+                   "Beverages", "Cereals", "Oils")
+```
+
+
+```{r include=FALSE}
+stargazer(model_1, model_2, model_3,
+          type = "html",
+          style = "aer",
+          #omit.stat=c("f", "ser", "n"), 
+          title = "Regression Results",
+          dep.var.labels = "Market Power Index (log transformed)",
+          covariate.labels = ind.var.names,
+          se = list(se_1, se_2, se_3),      #  Robust se
+          align = TRUE,
+          df = FALSE,
+          intercept.bottom = FALSE,
+          out = "Tables/7. Regression Table.doc"
+          )
+```
+
+### Table 8: Methods comparison 
+
+```{r include=FALSE}
+stargazer(PTA, GIM, SFA,
+          type = "html",
+          style = "aer",
+          #omit.stat=c("f", "ser", "n"), 
+          title = "Methods Comparison",
+          dep.var.labels = "Market Power Index",
+          column.labels =  c("PTA", "GIM", "SFA"),
+          covariate.labels = ind.var.names,
+          align = TRUE,
+          df = FALSE,
+          intercept.bottom = FALSE,
+          out = "Tables/8. Method Comparison.doc"
+          )
+```
+
+### Table 9: F tests industry
+
+```{r include=FALSE}
+stargazer(F.test.ind,
+          type = "html",
+          style = "aer",
+          out = "Tables/9. F test industry.doc")
+```
+
+
+```{r}
+clean %>%
+  ggplot(aes(x=n_of_obs, y=mp_index, color = approach)) +
+  geom_point(size = 4, alpha = 0.8, shape = 1) +
+  scale_x_continuous(trans = "log10") +
+  theme_minimal() +
+  easy_move_legend(to = "bottom") +
+    labs(x = "Number of observations (log10)",
+         y = "Market Power Index",
+         title = "Relationship between MP index and number of observations \nused in a study",
+         caption = "Source: own representation") +
+  easy_add_legend_title("Approach used:")
+```
+
+```{r}
+ggsave(filename = "Plots/4. Observarion number plot.png",
+       dpi = "print",
+       height = 10, width = 15, units = "cm")
+```
+
+
+
+
+
+### Tables PP and PSE
+
+```{r}
+model_1 <- lm(log(index) ~ app_PTA + app_GIM +
+                type_Oligopoly +
+                obs_n + 
+                count_n_america +
+                ind_dairy + ind_meat + ind_beverages + ind_cereals + ind_oils +
+                log(mean_pse), 
+         data=analysis)
+se_1 <- get_robust_se(model_1)
+
+model_2 <- lm(log(index) ~ app_PTA + app_GIM +
+                type_Oligopoly +
+                obs_n + 
+                count_n_america +
+                ind_dairy + ind_meat + ind_beverages + ind_cereals + ind_oils +
+                log(mean_pp), 
+         data=analysis)
+se_2 <- get_robust_se(model_2)
+
+model_3 <- lm(log(index) ~ app_PTA + app_GIM +
+                type_Oligopoly +
+                obs_n + 
+                count_n_america +
+                ind_dairy + ind_meat + ind_beverages + ind_cereals + ind_oils +
+                log(mean_pp) + log(mean_pse), 
+         data=analysis)
+se_3 <- get_robust_se(model_3)
+
+
+model_4 <- lm(log(index) ~ app_PTA + app_GIM +
+                type_Oligopoly +
+                obs_n + 
+                count_n_america +
+                ind_dairy + ind_meat + ind_beverages + ind_cereals + ind_oils +
+                mean_pse, 
+         data=analysis)
+se_4 <- get_robust_se(model_4)
+
+model_5 <- lm(log(index) ~ app_PTA + app_GIM +
+                type_Oligopoly +
+                obs_n + 
+                count_n_america +
+                ind_dairy + ind_meat + ind_beverages + ind_cereals + ind_oils +
+                mean_pp, 
+         data=analysis)
+se_5 <- get_robust_se(model_5)
+
+model_6 <- lm(log(index) ~ app_PTA + app_GIM +
+                type_Oligopoly +
+                obs_n + 
+                count_n_america +
+                ind_dairy + ind_meat + ind_beverages + ind_cereals + ind_oils +
+                mean_pp + mean_pse, 
+         data=analysis)
+se_6 <- get_robust_se(model_6)
+```
+```{r message=FALSE, include=FALSE}
+stargazer(model_1, model_2, model_3, model_4, model_5, model_6,
+          type = "html",
+          style = "aer",
+          #title = "Regressions Results",
+          keep.stat=c("n", "rsq", "adj.rsq"), 
+          title = "Analysis Results",
+          #column.labels =  c("Model 1", "Model 2", "Model 3"),
+          dep.var.labels = "Market Power Index (log transformed)",
+          se = list(se_1, se_2, se_3, se_4, se_5, se_6),
+          align = TRUE,
+          intercept.bottom = FALSE,
+          out = "Tables/9. PP vs PSE.doc"
+          )
+```
+
+### tables small farm and perish
+
+```{r}
+model_1 <- lm(log(index) ~ app_PTA + app_GIM +
+                type_Oligopoly +
+                obs_n + 
+                count_n_america +
+                ind_dairy + ind_meat + ind_beverages + ind_cereals + ind_oils +
+                log(mean_pse), 
+         data=analysis)
+se_1 <- get_robust_se(model_1)
+
+model_2 <- lm(log(index) ~ app_PTA + app_GIM +
+                type_Oligopoly +
+                obs_n + 
+                count_n_america +
+                #ind_dairy + ind_meat + ind_beverages + ind_cereals + ind_oils +
+                log(mean_pse) + perish, 
+         data=analysis)
+se_2 <- get_robust_se(model_2)
+
+model_3 <- lm(log(index) ~ app_PTA + app_GIM +
+                type_Oligopoly +
+                obs_n + 
+                count_n_america +
+                ind_dairy + ind_meat + ind_beverages + ind_cereals + ind_oils +
+                log(sfarm_share) + log(mean_pse), 
+         data=analysis)
+se_3 <- get_robust_se(model_3)
+```
+
+```{r message=FALSE, include=FALSE}
+stargazer(model_1, model_2, model_3,
+          type = "html",
+          style = "aer",
+          #title = "Regressions Results",
+          keep.stat=c("n", "rsq", "adj.rsq"), 
+          title = "Analysis Results",
+          #column.labels =  c("Model 1", "Model 2", "Model 3"),
+          dep.var.labels = "Market Power Index (log transformed)",
+          se = list(se_1, se_2, se_3),
+          align = TRUE,
+          intercept.bottom = FALSE,
+          out = "Tables/10. Small farm and perish.doc"
+          )
+```
+
+
+
+### tables doing business
+
+```{r}
+model_1 <- lm(log(index) ~ app_PTA + app_GIM +
+                type_Oligopoly +
+                obs_n + 
+                count_n_america +
+                ind_dairy + ind_meat + ind_beverages + ind_cereals + ind_oils +
+                log(mean_pse), 
+         data=analysis)
+se_1 <- get_robust_se(model_1)
+
+model_2 <- lm(log(index) ~ app_PTA + app_GIM +
+                type_Oligopoly +
+                obs_n + 
+                count_n_america +
+                ind_dairy + ind_meat + ind_beverages + ind_cereals + ind_oils +
+                log(mean_pse) + start_business, 
+         data=analysis)
+se_2 <- get_robust_se(model_2)
+
+model_3 <- lm(log(index) ~ app_PTA + app_GIM +
+                type_Oligopoly +
+                obs_n + 
+                count_n_america +
+                ind_dairy + ind_meat + ind_beverages + ind_cereals + ind_oils +
+                #log(mean_pse) +
+                log(start_business), 
+         data=analysis)
+se_3 <- get_robust_se(model_3)
+```
+
+
+```{r message=FALSE, include=FALSE}
+stargazer(model_1, model_2, model_3,
+          type = "html",
+          style = "aer",
+          #title = "Regressions Results",
+          keep.stat=c("n", "rsq", "adj.rsq"), 
+          title = "Analysis Results",
+          #column.labels =  c("Model 1", "Model 2", "Model 3"),
+          dep.var.labels = "Market Power Index (log transformed)",
+          se = list(se_1, se_2, se_3),
+          align = TRUE,
+          intercept.bottom = FALSE,
+          out = "Tables/11. DB.doc"
+          )
+```
+
+

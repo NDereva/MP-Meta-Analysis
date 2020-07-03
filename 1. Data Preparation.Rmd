@@ -1,0 +1,1011 @@
+---
+title: "Data Preparation"
+author: "Mykola Dereva"
+date: "24/06/2020"
+output: 
+  html_document: 
+    keep_md: yes
+---
+
+
+## Importing data
+
+
+```{r include=FALSE}
+rm(list=ls())
+
+library(tidyverse)
+library(readr)
+library(here)
+library(janitor)
+library(ggeasy)
+library(car)
+library(countrycode)
+library(lubridate)
+
+set.seed(42)
+```
+
+
+```{r}
+path <- here("data", "raw data", "Market Power Articles - Sheet2.csv")
+data <- read_csv(path)
+```
+
+```{r}
+glimpse(data)
+```
+
+Lets clean the table a bit
+
+```{r}
+clean <- data %>%
+  select(-starts_with("X1")) %>% # Drop technical columns (X11, X12)
+  fill(Year, Authors, Title, Country, .direction = "down") %>% # Fill empty cells
+  clean_names() %>% 
+  rename(mp_type = type_of_mp,            # Shorten colnames
+         mp_index = market_power_index,
+         industry = industry_market,
+         data_freq = data_frequency)
+
+glimpse(clean)
+```
+
+
+#### Converting mp_type to categorical dtype
+
+```{r}
+clean %>%
+  group_by(mp_type) %>%
+  summarise(n = n()) %>%
+  mutate(prop = round(n / sum(n) * 100, 2)) %>%
+  arrange(-n)
+```
+Clean mispelled rows and filter only for Oligopoly and Oligopsony 
+```{r}
+clean <- clean %>%
+  mutate(mp_type = if_else(mp_type == "Ologopoly", "Oligopoly", mp_type) ) %>%
+  filter(mp_type %in% c("Oligopoly", "Oligopsony")) %>%
+  mutate(mp_type = as_factor(mp_type))
+```
+
+
+
+```{r}
+clean %>%
+  group_by(mp_type) %>%
+  summarise(n = n()) %>%
+  mutate(prop = round(n / sum(n) * 100, 2)) %>%
+  arrange(-n)
+```
+
+#### Clean and convert data_freq colum
+
+```{r}
+clean %>%
+  group_by(data_freq) %>%
+  summarise(n = n()) %>%
+  mutate(prop = round(n / sum(n) * 100, 2)) %>%
+  arrange(-n)
+```
+Seems fine
+
+Also I'll create new column with number of observations per year
+```{r}
+clean <- clean %>%
+  mutate(data_freq = as_factor(data_freq)) %>%
+  mutate(n_obs_per_year = case_when(data_freq == "Yearly" ~ 1,
+                                    data_freq == "Monthly" ~ 12,
+                                    data_freq == "Quaterly" ~ 4,
+                                    data_freq == "Daily" ~ 365,
+                                    data_freq == "Weekly" ~ 52 ) )
+```
+
+```{r}
+clean %>%
+  group_by(n_obs_per_year) %>%
+  summarise(n = n()) %>%
+  mutate(prop = round(n / sum(n) * 100, 2)) %>%
+  arrange(-n)
+```
+seems correct 
+
+#### Clean and convert approach column
+
+```{r}
+clean %>%
+  group_by(approach) %>%
+  summarise(n = n()) %>%
+  mutate(prop = round(n / sum(n) * 100, 2)) %>%
+  arrange(-n)
+```
+
+
+I will filter out articles in which I am not sure
+
+```{r}
+clean <- clean %>%
+  filter(approach %in% c("PTA", "GIM", "SFA")) %>%
+  mutate(approach = as_factor(approach))
+```
+
+```{r}
+clean %>%
+  group_by(approach) %>%
+  summarise(n = n()) %>%
+  mutate(prop = round(n / sum(n) * 100, 2)) %>%
+  arrange(-n)
+```
+Seems correct
+
+#### Clean and transform industry column
+
+```{r}
+clean %>%
+  group_by(industry) %>%
+  summarise(n = n()) %>%
+  mutate(prop = round(n / sum(n) * 100, 2)) %>%
+  arrange(-n)
+```
+
+With this one it will be a bit more complicated since there are plenty of categories
+
+clean the column a bit
+
+```{r}
+clean <- clean %>%
+  filter(!is.na(industry)) %>%                        # drop N/A
+  mutate(industry_fct = str_to_lower(industry) %>%    # to lowercase
+                          str_trim(side="both") ) 
+```
+
+```{r}
+clean %>%
+  select(industry, industry_fct)
+```
+
+
+create vectors which contain key words for further grouping
+```{r}
+dairy <- c("milk", "dairy", "cheese", "butter")
+meat <- c("meat", "pork", "beef", "hog", "poultry", "livestock", "cattle")
+cereals <- c("wheat", "oat", "triticale", "grain", "cereal", "barley")
+oils <- c("canola", "oil", "fat")
+beverages <- c("tea", "beer", "water", "brew", "coffee", "liquor", "drink",
+               "spirit", "wine", "brandy", "cocoa", "beverage")
+tobaco <- c("tobacco", "cigar")
+fruits <- c("fruit", "banana")
+paper <- c("pulp", "paper", "wood", "sawlog")
+bread_flour <- c("bread", "flour")
+sugar <- c("sugar")
+
+```
+
+I coudln't quickly figure out how tho check the presence of every value in vectors in the industry_fct column for categorisation. 
+
+So I will write custom function which returns TRUE if column contains any value in the vector and FALSE in not. 
+
+```{r}
+# helper function. Returns TRUE if any value in vector match string
+contains_value <- function(string, vector) {
+  
+  matched <- FALSE
+  
+  for (word in vector) {
+    
+    if ( any(str_detect(string, word)) ) {
+      matched <- TRUE
+      break }
+  }
+  
+  return(matched)
+}
+
+
+```
+
+Test the function 
+```{r}
+# Function returns TRUE for each row which have any macthes with vector
+
+col_contain_val <- function(column, vector){
+  x <- c()
+  
+  for (i in 1:length(column) ) {
+    x[i] <- contains_value(column[i], vector)
+  }
+  
+  return(x)
+}
+
+#test if any value in meat column is present in industr_fct column
+print(clean$industry_fct[1:7])
+col_contain_val(clean$industry_fct[1:7], meat)
+```
+Seems like it works fine
+
+```{r}
+clean <- clean %>%
+  mutate(industry_fct = case_when(
+                          col_contain_val(industry_fct, dairy) ~ "dairy",
+                          col_contain_val(industry_fct, meat) ~ "meat",
+                          col_contain_val(industry_fct, cereals) ~ "cereals",
+                          col_contain_val(industry_fct, oils) ~ "oils",
+                          col_contain_val(industry_fct, beverages) ~ "beverages",
+                          col_contain_val(industry_fct, tobaco) ~ "tobacco",
+                          col_contain_val(industry_fct, fruits) ~ "fruits",
+                          col_contain_val(industry_fct, paper) ~ "paper",
+                          col_contain_val(industry_fct, bread_flour) ~ "bread or flour",
+                          col_contain_val(industry_fct, sugar) ~ "sugar",
+                          TRUE ~ industry_fct
+                                )
+         )
+
+clean %>%
+  select(industry, industry_fct)
+```
+Seems that the values were changed correctly
+
+Lets aggregate the data in column
+
+```{r}
+clean %>%
+  group_by(industry_fct) %>%
+  summarise(n = n()) %>%
+  mutate(prop = round(n / sum(n) * 100, 2)) %>%
+  arrange(-n)
+```
+Probably I shouldn't use groups with less then 10 observations. The results might be unreliable.
+
+now lets convert industry_fct to factor 
+
+```{r}
+clean <- clean %>%
+  mutate(industry_fct = as_factor(industry_fct)) %>%
+  mutate(industry_fct = fct_lump_min(industry_fct, min = 10, other_level = "other"))
+```
+
+```{r}
+clean %>%
+  group_by(industry_fct) %>%
+  summarise(n = n()) %>%
+  mutate(prop = round(n / sum(n) * 100, 2)) %>%
+  arrange(-n)
+```
+
+
+```{r}
+clean %>%
+  ggplot(aes(x = fct_reorder(industry_fct, mp_index, median),
+             y = mp_index,
+             color = approach)) + 
+  geom_jitter(width = 0.25, height = 0, alpha = 0.6, size = 2) +
+  labs(x = "Industry", y="Market Power Index") +
+  theme_minimal()
+```
+Seems that there is an outlier in cereals
+
+#### Clean country column 
+
+```{r}
+clean %>%
+  group_by(country) %>%
+  summarise(n = n()) %>%
+  mutate(prop = round(n / sum(n) * 100, 2)) %>%
+  ungroup() %>%
+  arrange(-n) %>% 
+  head(10)
+
+```
+
+Seems that countries can be categorized into 3 main groups USA, EU and Australia
+I am not sure about Australia since most of the observations are from single article.
+
+```{r}
+# Vector with all of the Europe countries 
+
+europe <- c(
+        "Austria",	"Italy",
+        "Belgium",	"Latvia",
+        "Bulgaria",	"Lithuania",
+        "Croatia",	"Luxembourg",
+        "Cyprus",	  "Malta",
+        "Czech Republic",	"Netherlands",
+        "Denmark",	"Poland",
+        "Estonia",	"Portugal",
+        "Finland",	"Romania",
+        "France",	  "Slovakia",
+        "Germany",	"Slovenia",
+        "Greece",	  "Spain",
+        "Hungary",	"Sweden",
+        "Ireland",  "EU",
+        "Norway", "UK", "United Kingdom"
+        )
+
+developing <- c("Ukraine", "Brazil", "China", "Haiti", "India",
+                "Kenya", "Sri Lanka")
+```
+
+
+Lets also standardize country names 
+
+```{r}
+clean$country_st <-  countrycode(sourcevar = clean$country,
+                        origin = "country.name",
+                        destination = "country.name",
+                        warn = TRUE,
+                        nomatch = NULL)
+```
+Check the result
+
+```{r}
+clean %>% 
+  distinct(country, country_st)
+```
+Beautiful
+
+
+create country_fct column
+
+```{r}
+clean <- clean %>%
+  mutate(country_fct = case_when(
+                        country_st %in% europe ~ "europe",
+                        col_contain_val(country_st, c("United States",
+                                                      "Canada")) ~ "n_america",
+                        #col_contain_val(country_st, developing) ~ "developing",
+                        #col_contain_val(country, "Australia") ~ "Australia",
+                        TRUE ~ "other")
+         ) %>%
+  mutate(country_fct = as_factor(country_fct))
+  
+clean %>%
+  group_by(country_fct) %>%
+  summarise(n = n()) %>%
+  mutate(prop = round(n / sum(n) * 100, 2)) %>%
+  arrange(-n)
+```
+Seems fine. 
+
+
+```{r}
+clean %>%
+  ggplot(aes(x = fct_reorder(country_fct, mp_index, median),
+             y = mp_index,
+             color = approach)) + 
+  geom_jitter(width = 0.25, height = 0, alpha = 0.6, size = 2) +
+  labs(x = "Country", y="Market Power Index") +
+  theme_minimal()
+```
+
+
+### add column with number of observations in article
+```{r}
+clean <- clean %>%
+  separate(period, into = c("obs_start", "obs_stop"), 
+           convert =TRUE, remove = FALSE) %>%
+  mutate(obs_years = obs_stop - obs_start) %>%
+  mutate(n_of_obs = n_obs_per_year * obs_years)
+```
+
+```{r}
+clean %>%
+  select(obs_start, obs_stop, obs_years, n_obs_per_year, n_of_obs) %>%
+  head(10)
+```
+Seems correct 
+
+check for na
+```{r}
+sum(is.na(clean$n_of_obs))
+```
+
+
+```{r}
+clean %>%
+  filter(!is.na(n_of_obs)) %>%
+  ggplot(aes(x=n_of_obs, y=mp_index, color = approach)) +
+  geom_point(size = 3, alpha = 0.4) +
+  scale_x_continuous(trans = "log10") +
+  theme_minimal() +
+  easy_move_legend(to = "bottom") +
+    labs(x = "Number of observations (log10)",
+         y = "Market Power Index") +
+  easy_add_legend_title("Approach used:")
+  
+```
+
+### Create dummy variable after 2005
+Hypothesis is that there might me a difference between in mp index between older articles and newer ones. 
+The decision to choose 2005 is a bit arbitrary, but it divide data in 2 sets with approximately the same number of observations.
+
+
+```{r}
+clean <- clean %>%
+  mutate(
+          after_2005 = ifelse(
+            year > 2005,
+            yes = 1,
+            no = 0) 
+        ) 
+
+clean %>%
+  select(year, after_2005) %>%
+  head(10)
+```
+
+Seems correct
+
+```{r}
+clean %>%
+  ggplot(aes(x = as_factor(after_2005),
+             y = mp_index,
+             color = approach)) + 
+  geom_jitter(width = 0.25, height = 0, alpha = 0.6, size = 2) +
+  labs(x = "After 2005", y="Market Power Index") +
+  theme_minimal()
+```
+
+### Dummy for perishable goods
+
+```{r}
+perishables <- c("beef", "pork", "meat", "milk", "paultry", 
+                 "poultry", "egg", "fish", "salmon")
+
+clean <- clean %>%
+  mutate(
+          perish = case_when(
+                        col_contain_val(stringr::str_to_lower(industry),
+                                        perishables) ~ 1,
+                                        TRUE ~ 0) 
+        )
+```
+
+manually change improper values
+
+```{r}
+
+```
+
+
+check results 
+
+```{r}
+clean %>% 
+  select(industry, perish) %>% 
+  filter(perish == 1)
+```
+
+
+
+## Outliers
+Finally, lets look on the possible outliers
+
+```{r}
+clean %>%
+  select(year, mp_index, industry) %>%
+  arrange(-mp_index) %>%
+  head(10)
+```
+There are few MP values which are considerable higher or lower then other.
+This might influence the reliability of research. 
+Thus, I will drop them
+
+```{r}
+clean <- clean %>%
+  filter(between(mp_index, 0.005, 0.52))
+```
+
+Looks like I am done with preliminary data preparation 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## Load data related to Agricultural support (PSE) and Producer protection
+
+### Adding Agr. support (PSE) to our data
+
+data is taken from OECD website 
+[sorce](https://data.oecd.org/agrpolicy/agricultural-support.htm) 
+
+
+
+```{r}
+support <- read_csv( here("data", "raw data",
+                          "Agricultural support (PSE) OESD .csv") )
+glimpse(support)
+```
+
+We decided to use PSE index in our analysis
+But first, rename colnames to make them easier to use. 
+
+```{r}
+support <- support %>% 
+  clean_names()
+
+glimpse(support)
+```
+
+Filter for PSE values in % of gross farm receipts
+
+```{r}
+support <- support %>% 
+  filter(subject == "PSE", measure == "PC_GFARM") 
+
+nrow(support)
+```
+
+Data shrieked significantly
+
+From the data we need only 3 columns:
+Location, year and value 
+Lets drop other columns
+
+```{r}
+support <-  support %>% 
+  select(location, year = time, pse = value)
+
+head(support)
+```
+Seems correct 
+Now we need to join pse indicator to out main data set.
+To do so, we need to unify country names across data sets.
+Seems that contrycode package might really help.
+
+```{r}
+guess_field(support$location)
+```
+Seems that OECD uses one of beforewritten country codes
+lets convert it to the regular English country names
+
+```{r}
+support$country <- countrycode(sourcevar = support$location,
+                    origin = "genc3c",
+                    destination = "country.name",
+                    warn = TRUE,
+                    nomatch = NULL)
+```
+
+lets check the results
+
+```{r}
+support %>% 
+  distinct(location, country)
+```
+Beautiful 
+
+Drop columns we don't need 
+
+```{r}
+support <- support %>% 
+  select(country, year, pse)
+```
+
+
+
+Since OECD data not provide PSE data related to the individual EU countries
+we will have to use EU28 aggregate PSE information 
+
+```{r}
+EU28 <- countrycode(
+        sourcevar = c(
+        "Austria",	"Italy",
+        "Belgium",	"Latvia",
+        "Bulgaria",	"Lithuania",
+        "Croatia",	"Luxembourg",
+        "Cyprus",	  "Malta",
+        "Czech Republic",	"Netherlands",
+        "Denmark",	"Poland",
+        "Estonia",	"Portugal",
+        "Finland",	"Romania",
+        "France",	  "Slovakia",
+        "Germany",	"Slovenia",
+        "Greece",	  "Spain",
+        "Hungary",	"Sweden",
+        "Ireland", "United Kingdom"
+                      ),
+            origin = "country.name",
+            destination = "country.name",
+            warn = TRUE,
+            nomatch = NULL)
+```
+
+Lets estimate average PSE related to each MPI observation 
+
+Fist of all let's make a column which contain all the years during which 
+each MPI was estimated
+```{r}
+country_year <- clean %>%
+  select(country_st, obs_start, obs_stop) %>%
+  # change names of EU countries to "EU28" to be able to join with
+
+  # create unique identification of each MPI
+  tibble::rowid_to_column("id") %>%   
+  # transform start and end date to one column 
+  gather(key = "start_stop", value = "year", obs_start:obs_stop) %>% 
+  arrange(id) %>% 
+  # convert this new column as date
+  mutate(year = as.Date(as.character(year), format = "%Y")) %>% 
+  group_by(id) %>% 
+  # fill sequence of of years
+  complete(year = seq(min(year), max(year), by ="year")) %>% 
+  ungroup() %>% 
+  #drop start_stop columns since we don't need it
+  select(id, country = country_st, year) %>% 
+  # fill empty values
+  fill(country, .direction = "down") %>%
+  # convert datetype to keep just year information
+  # and drop moth and day
+  mutate(year = year(year))
+
+country_year
+```
+
+Now we can easily join country_year with PSE data to calculate the average
+PSE per MPI estimate
+```{r}
+mean_pse <- country_year %>% 
+  # change EU country names to match OECD aggregation 
+  # OECD data
+  mutate(country = case_when(
+                        country %in% EU28 ~ "EU28",
+                        TRUE ~ country)) %>% 
+  # join information related to PSE index
+  left_join(support, 
+            by = c("country", "year"),
+            copy = TRUE) %>% 
+  # calculate an average PSE index attributed to each MPI observation
+  group_by(id) %>% 
+  summarise(mean_pse = mean(pse, na.rm=TRUE)) %>% 
+  ungroup()
+
+head(mean_pse)
+```
+
+
+
+```{r}
+mean(is.na(mean_pse$mean_pse))
+```
+Unfortunately we 45% of observations is missing
+Probably this is because many articles use too old data for the MPI estimation
+While PSE index data is available starting from 1986,
+
+
+
+```{r}
+clean <- clean %>% 
+  # create an id for each of MPI observation to join it to PSE data
+  tibble::rowid_to_column("id") %>% 
+  inner_join(mean_pse, by = "id", copy = TRUE)
+```
+Now we have PSE information in out data set
+
+
+Plot the resulting variable 
+```{r}
+ggplot(clean, aes(mean_pse, mp_index, color=approach)) +
+  geom_point(alpha = 0.7, size = 5, shape = 1) +
+  theme_minimal()
+```
+
+
+
+
+### Adding Producer Protection (PP) index to our data
+
+
+The algorithm will be the similar as in case of PSE
+so I will not comment it
+
+Data source is the same 
+[sorce](https://data.oecd.org/agrpolicy/producer-protection.htm#indicator-chart) 
+
+```{r}
+PP <- read_csv( here("data", "raw data",
+                     "Producer Protection (PP) OECD.csv") )
+glimpse(PP)
+```
+
+
+```{r}
+PP <- PP %>% 
+  clean_names()
+
+glimpse(PP)
+```
+
+```{r}
+PP <-  PP %>% 
+  select(location, year = time, PP = value)
+
+head(PP)
+```
+
+
+```{r}
+PP$country <- countrycode(sourcevar = PP$location,
+                    origin = "genc3c",
+                    destination = "country.name",
+                    warn = TRUE,
+                    nomatch = NULL)
+
+PP %>% 
+  distinct(location, country)
+```
+
+
+```{r}
+PP <- PP %>% 
+  select(country, year, PP)
+```
+
+
+
+```{r}
+mean_pp <- country_year %>%
+  mutate(country = case_when(
+                      country %in% EU28 ~ "EU28",
+                      TRUE ~ country)) %>% 
+  left_join(PP, 
+            by = c("country", "year"),
+            copy = TRUE) %>% 
+  # calculate an average PSE index attributed to each MPI observation
+  group_by(id) %>% 
+  summarise(mean_pp = mean(PP, na.rm=TRUE)) %>% 
+  ungroup()
+
+head(mean_pp)
+```
+
+```{r}
+mean(is.na(mean_pp))
+```
+Luckily there is only 22% of missing values in mean PP indicator
+
+```{r}
+clean <- clean %>% 
+  inner_join(mean_pp, by = "id", copy = TRUE)
+```
+
+
+Check observations with negative PSE
+```{r}
+clean %>% 
+  filter(!is.na(mean_pse), mean_pse < 0) %>% 
+  select(country_st, id, mean_pse) %>% 
+  mutate(log_mean_pse = log(mean_pse))
+```
+
+```{r}
+clean %>% 
+  filter(id == 104)
+```
+
+
+
+```{r}
+ggplot(clean, aes(mean_pp, mp_index, color=approach)) +
+  geom_point(alpha = 0.7, size = 5, shape = 1) +
+  theme_minimal()
+```
+
+
+
+## Small Farms Share
+
+Lets add variable witch contains information related to the market share of small 
+farmers
+
+The EU data is taken from the Eurostat website 
+The code of the data set is "ef_kvftaa"
+In the our analysis we define small farmers as ones who have less than 20 ha of 
+land. Small farmers variable will contain the share of small farmers output (in EUR)
+in total agricultural output. 
+
+
+MAYBE IT IS BETTER TO USE INDUSTRY DATA, NOT COUNTRY AGGREGATE
+
+```{r}
+farms <- read_csv(here("data", "raw data", "Farm structure EU",
+                       "ef_kvftaa_1_Data.csv"),
+                  na = c("", "NA", ":") # NA is coded as ":"
+                  )
+glimpse(farms)
+```
+
+
+drop columns we dont need and rename ones we need
+
+```{r}
+farms <- farms %>% 
+  clean_names() %>% 
+  select(country = geo, agrarea, year = time, output_eur = value)
+
+glimpse(farms)
+```
+
+
+Standardize country names
+
+```{r}
+guess_field(farms$country)
+```
+
+```{r}
+farms$country <- countrycode(sourcevar = farms$country,
+                    origin = "country.name.en",
+                    destination = "country.name",
+                    warn = TRUE,
+                    nomatch = NULL)
+```
+
+
+check the levels of farm size aggregation
+```{r}
+farms %>% 
+  pivot_wider(names_from = agrarea, 
+              values_from = output_eur) %>% 
+  clean_names() %>% 
+  colnames()
+```
+
+
+create column with share of small farms
+Also we will assume that in the 2000 year small farm market share == 2005
+and 2018 == 2013 to alleviate issue of sample size reduction. 
+
+```{r}
+sfarm_share <- farms %>%
+  pivot_wider(names_from = agrarea, 
+              values_from = output_eur) %>% 
+  group_by(country, year) %>%
+  clean_names() %>% 
+  mutate(sfarms_total = zero_ha + less_than_2_ha + from_2_to_4_9_ha +
+                        from_5_to_9_9_ha + from_10_to_19_9_ha,
+         sfarms_share = sfarms_total / total * 100) %>% 
+  ungroup() %>% 
+  # add data for 2000 and 2018
+  select(country, year, sfarms_share) %>% 
+  pivot_wider(names_from = year, values_from = sfarms_share) %>%
+  mutate(`2000` = `2005`, `2018` = `2013`, `1995` = `2005`) %>% 
+  pivot_longer(cols = -country,
+               names_to = "year",
+               values_to = "sfarm_share") %>% 
+  mutate(year = as.numeric(year))
+
+head(sfarm_share)
+```
+
+
+
+join sfarm_share with main data set
+
+
+
+```{r}
+sfarm <-country_year %>%
+  left_join(sfarm_share, 
+            by = c("country", "year"),
+            copy = TRUE) %>% 
+  # calculate an average PSE index attributed to each MPI observation
+  group_by(id) %>% 
+  summarise(sfarm_share = mean(sfarm_share, na.rm=TRUE)) %>% 
+  ungroup()
+
+head(sfarm_share)
+```
+
+
+```{r}
+mean(is.na(sfarm))
+```
+
+
+
+```{r}
+clean <- clean %>% 
+  inner_join(sfarm, by = "id", copy = TRUE)
+```
+
+
+## Add data from Doing Buisiness
+
+
+
+```{r}
+db <- readxl::read_excel(path = here("data", "raw data", "Doing Business.xlsx"),
+                         sheet = 1, skip = 3)
+
+dim(db)
+```
+
+select only columns we need
+
+```{r}
+db <- db %>%
+  clean_names() %>% 
+  select(country_code, year = db_year, score_starting_a_business)
+```
+
+```{r}
+head(db, 10)
+```
+
+
+To decrease the number of dropped observations we assume that there is
+significant difference between 2004 and 2000 in Start Business index
+```{r}
+db <- db %>% 
+  pivot_wider(names_from = year, 
+              values_from = score_starting_a_business) %>% 
+  mutate(`2000` = `2004`) %>% 
+  pivot_longer(cols = -country_code,
+               names_to = "year",
+               values_to = "score_starting_a_business") %>% 
+  mutate(year = as.numeric(year))
+```
+
+
+
+Adjust country names
+
+```{r}
+guess_field(db$country_code)
+```
+
+```{r}
+db$country <- countrycode(sourcevar = db$country_code,
+                    origin = "genc3c",
+                    destination = "country.name",
+                    warn = TRUE,
+                    nomatch = NULL)
+```
+
+
+```{r}
+db %>% 
+  select(country_code, country) %>% 
+  distinct() %>% 
+  head(10)
+```
+
+```{r}
+db_join <- country_year %>%
+  left_join(db, 
+            by = c("country", "year"),
+            copy = TRUE) %>% 
+  # calculate an average DB index attributed to each MPI observation
+  group_by(id) %>% 
+  summarise(start_business = mean(score_starting_a_business, na.rm=TRUE)) %>% 
+  ungroup()
+
+head(db_join, 10)
+```
+```{r}
+mean(is.na(db_join$start_business))
+```
+
+
+```{r}
+clean <- clean %>% 
+  inner_join(db_join, by = "id", copy = TRUE)
+```
+
+
+
+```{r}
+saveRDS(clean, file = "data/clean data/Clean_data.Rds")
+```
+
