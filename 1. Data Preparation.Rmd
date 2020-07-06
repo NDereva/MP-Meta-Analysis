@@ -30,18 +30,14 @@ path <- here("data", "raw data", "Market Power Articles - Sheet2.csv")
 data <- read_csv(path)
 ```
 
-```{r}
-glimpse(data)
-```
-
 Lets clean the table a bit
 
 ```{r}
 clean <- data %>%
   select(-starts_with("X1")) %>% # Drop technical columns (X11, X12)
-  fill(Year, Authors, Title, Country, .direction = "down") %>% # Fill empty cells
-  clean_names() %>% 
-  rename(mp_type = type_of_mp,            # Shorten colnames
+  fill(Year, Authors, Title, Country, .direction = "down") %>% # Fill down empty cells
+  clean_names() %>%                       # Rename column names
+  rename(mp_type = type_of_mp,            
          mp_index = market_power_index,
          industry = industry_market,
          data_freq = data_frequency)
@@ -52,14 +48,15 @@ glimpse(clean)
 
 #### Converting mp_type to categorical dtype
 
-```{r}
+```{r warning=FALSE}
 clean %>%
   group_by(mp_type) %>%
   summarise(n = n()) %>%
   mutate(prop = round(n / sum(n) * 100, 2)) %>%
   arrange(-n)
 ```
-Clean mispelled rows and filter only for Oligopoly and Oligopsony 
+
+Clean misspelled rows and filter only for Oligopoly and Oligopsony 
 ```{r}
 clean <- clean %>%
   mutate(mp_type = if_else(mp_type == "Ologopoly", "Oligopoly", mp_type) ) %>%
@@ -179,7 +176,7 @@ sugar <- c("sugar")
 
 ```
 
-I coudln't quickly figure out how tho check the presence of every value in vectors in the industry_fct column for categorisation. 
+I couldn't quickly figure out how tho check the presence of every value in vectors in the industry_fct column for categorization. 
 
 So I will write custom function which returns TRUE if column contains any value in the vector and FALSE in not. 
 
@@ -204,7 +201,7 @@ contains_value <- function(string, vector) {
 
 Test the function 
 ```{r}
-# Function returns TRUE for each row which have any macthes with vector
+# Function returns TRUE for each row which have any matches with vector
 
 col_contain_val <- function(column, vector){
   x <- c()
@@ -325,7 +322,7 @@ developing <- c("Ukraine", "Brazil", "China", "Haiti", "India",
 ```
 
 
-Lets also standardize country names 
+Lets also standardize country names to make it easier to join new data later
 
 ```{r}
 clean$country_st <-  countrycode(sourcevar = clean$country,
@@ -386,6 +383,7 @@ clean <- clean %>%
   mutate(n_of_obs = n_obs_per_year * obs_years)
 ```
 
+Check the resulting columns:
 ```{r}
 clean %>%
   select(obs_start, obs_stop, obs_years, n_obs_per_year, n_of_obs) %>%
@@ -395,9 +393,9 @@ Seems correct
 
 check for na
 ```{r}
-sum(is.na(clean$n_of_obs))
+any(is.na(clean$n_of_obs))
 ```
-
+No NAs
 
 ```{r}
 clean %>%
@@ -413,7 +411,8 @@ clean %>%
   
 ```
 
-### Create dummy variable after 2005
+### Create dummy variable "after 2005"
+
 Hypothesis is that there might me a difference between in mp index between older articles and newer ones. 
 The decision to choose 2005 is a bit arbitrary, but it divide data in 2 sets with approximately the same number of observations.
 
@@ -446,23 +445,23 @@ clean %>%
 
 ### Dummy for perishable goods
 
+Theory is that there should be more market power in the industries which cannot 
+store product for a long time.
+
 ```{r}
 perishables <- c("beef", "pork", "meat", "milk", "paultry", 
-                 "poultry", "egg", "fish", "salmon")
+                 "poultry", "egg", "fish", "salmon", "hog", "dairy", "cheese")
 
 clean <- clean %>%
-  mutate(
-          perish = case_when(
-                        col_contain_val(stringr::str_to_lower(industry),
-                                        perishables) ~ 1,
-                                        TRUE ~ 0) 
-        )
-```
-
-manually change improper values
-
-```{r}
-
+  mutate( perish = case_when(
+                col_contain_val(stringr::str_to_lower(industry),
+                                perishables) ~ 1,
+                                TRUE ~ 0) ) %>% 
+  # Set 0 for cond. milk values
+  mutate(perish = case_when(
+                col_contain_val(stringr::str_to_lower(industry),
+                                "cond") ~ 0,
+                                TRUE ~ perish) )
 ```
 
 
@@ -475,9 +474,20 @@ clean %>%
 ```
 
 
+```{r}
+clean %>%
+  ggplot(aes(x = as_factor(perish),
+             y = mp_index,
+             color = approach)) + 
+  geom_jitter(width = 0.25, height = 0, alpha = 0.6, size = 2) +
+  labs(x = "Perishable goods", y="Market Power Index") +
+  theme_minimal()
+```
+Surprisingly, perishable goods seems to experience less MP
+
 
 ## Outliers
-Finally, lets look on the possible outliers
+Finally, lets take a look on the possible MP outliers
 
 ```{r}
 clean %>%
@@ -491,10 +501,10 @@ Thus, I will drop them
 
 ```{r}
 clean <- clean %>%
-  filter(between(mp_index, 0.005, 0.52))
+  filter(between(mp_index, 0.001, 0.52))
 ```
 
-Looks like I am done with preliminary data preparation 
+Looks like I am done with data preparation of the initial MP data 
 
 
 
@@ -508,7 +518,7 @@ Looks like I am done with preliminary data preparation
 
 
 
-
+# Joining data from external sorces 
 
 ## Load data related to Agricultural support (PSE) and Producer protection
 
@@ -522,7 +532,6 @@ data is taken from OECD website
 ```{r}
 support <- read_csv( here("data", "raw data",
                           "Agricultural support (PSE) OESD .csv") )
-glimpse(support)
 ```
 
 We decided to use PSE index in our analysis
@@ -544,7 +553,6 @@ support <- support %>%
 nrow(support)
 ```
 
-Data shrieked significantly
 
 From the data we need only 3 columns:
 Location, year and value 
@@ -557,7 +565,7 @@ support <-  support %>%
 head(support)
 ```
 Seems correct 
-Now we need to join pse indicator to out main data set.
+Now we need to join PSE indicator to out main data set.
 To do so, we need to unify country names across data sets.
 Seems that contrycode package might really help.
 
@@ -583,7 +591,7 @@ support %>%
 ```
 Beautiful 
 
-Drop columns we don't need 
+Keep only columns we need
 
 ```{r}
 support <- support %>% 
@@ -597,22 +605,22 @@ we will have to use EU28 aggregate PSE information
 
 ```{r}
 EU28 <- countrycode(
-        sourcevar = c(
-        "Austria",	"Italy",
-        "Belgium",	"Latvia",
-        "Bulgaria",	"Lithuania",
-        "Croatia",	"Luxembourg",
-        "Cyprus",	  "Malta",
-        "Czech Republic",	"Netherlands",
-        "Denmark",	"Poland",
-        "Estonia",	"Portugal",
-        "Finland",	"Romania",
-        "France",	  "Slovakia",
-        "Germany",	"Slovenia",
-        "Greece",	  "Spain",
-        "Hungary",	"Sweden",
-        "Ireland", "United Kingdom"
-                      ),
+              sourcevar = c(
+              "Austria",	"Italy",
+              "Belgium",	"Latvia",
+              "Bulgaria",	"Lithuania",
+              "Croatia",	"Luxembourg",
+              "Cyprus",	  "Malta",
+              "Czech Republic",	"Netherlands",
+              "Denmark",	"Poland",
+              "Estonia",	"Portugal",
+              "Finland",	"Romania",
+              "France",	  "Slovakia",
+              "Germany",	"Slovenia",
+              "Greece",	  "Spain",
+              "Hungary",	"Sweden",
+              "Ireland", "United Kingdom"
+                            ),
             origin = "country.name",
             destination = "country.name",
             warn = TRUE,
@@ -674,9 +682,9 @@ head(mean_pse)
 
 
 ```{r}
-mean(is.na(mean_pse$mean_pse))
+sum(is.na(mean_pse$mean_pse))
 ```
-Unfortunately we 45% of observations is missing
+Unfortunately 10 or (4.5%) of observations is missing
 Probably this is because many articles use too old data for the MPI estimation
 While PSE index data is available starting from 1986,
 
@@ -698,10 +706,19 @@ ggplot(clean, aes(mean_pse, mp_index, color=approach)) +
   theme_minimal()
 ```
 
+Check observations with negative PSE
+```{r}
+clean %>% 
+  filter(!is.na(mean_pse), mean_pse < 0) %>% 
+  select(country_st, id, mean_pse) %>% 
+  mutate(log_mean_pse = log(mean_pse))
+```
+
+Ukraine ¯\_(ツ)_/¯
 
 
 
-### Adding Producer Protection (PP) index to our data
+## Adding Producer Protection (PP) index to our data
 
 
 The algorithm will be the similar as in case of PSE
@@ -713,7 +730,6 @@ Data source is the same
 ```{r}
 PP <- read_csv( here("data", "raw data",
                      "Producer Protection (PP) OECD.csv") )
-glimpse(PP)
 ```
 
 
@@ -768,27 +784,13 @@ head(mean_pp)
 ```
 
 ```{r}
-mean(is.na(mean_pp))
+sum(is.na(mean_pp))
 ```
-Luckily there is only 22% of missing values in mean PP indicator
+
 
 ```{r}
 clean <- clean %>% 
   inner_join(mean_pp, by = "id", copy = TRUE)
-```
-
-
-Check observations with negative PSE
-```{r}
-clean %>% 
-  filter(!is.na(mean_pse), mean_pse < 0) %>% 
-  select(country_st, id, mean_pse) %>% 
-  mutate(log_mean_pse = log(mean_pse))
-```
-
-```{r}
-clean %>% 
-  filter(id == 104)
 ```
 
 
@@ -799,9 +801,10 @@ ggplot(clean, aes(mean_pp, mp_index, color=approach)) +
   theme_minimal()
 ```
 
+Probably I should not observations with pp > 2 in further analysis 
 
 
-## Small Farms Share
+# Small Farms Share
 
 Lets add variable witch contains information related to the market share of small 
 farmers
@@ -820,7 +823,6 @@ farms <- read_csv(here("data", "raw data", "Farm structure EU",
                        "ef_kvftaa_1_Data.csv"),
                   na = c("", "NA", ":") # NA is coded as ":"
                   )
-glimpse(farms)
 ```
 
 
@@ -838,7 +840,7 @@ glimpse(farms)
 Standardize country names
 
 ```{r}
-guess_field(farms$country)
+guess_field(farms$country) %>% head(3)
 ```
 
 ```{r}
@@ -886,11 +888,7 @@ sfarm_share <- farms %>%
 head(sfarm_share)
 ```
 
-
-
-join sfarm_share with main data set
-
-
+Prepare to join
 
 ```{r}
 sfarm <-country_year %>%
@@ -902,15 +900,18 @@ sfarm <-country_year %>%
   summarise(sfarm_share = mean(sfarm_share, na.rm=TRUE)) %>% 
   ungroup()
 
-head(sfarm_share)
+head(sfarm)
 ```
 
 
 ```{r}
-mean(is.na(sfarm))
+sum(is.na(sfarm))
 ```
 
+Too many observations is NA 
 
+
+join sfarm_share with main data set
 
 ```{r}
 clean <- clean %>% 
@@ -918,9 +919,16 @@ clean <- clean %>%
 ```
 
 
+
+
+```{r}
+ggplot(clean, aes(sfarm_share, mp_index, color=approach)) +
+  geom_point(alpha = 0.5, size = 5) +
+  theme_minimal()
+```
+
+
 ## Add data from Doing Buisiness
-
-
 
 ```{r}
 db <- readxl::read_excel(path = here("data", "raw data", "Doing Business.xlsx"),
@@ -935,14 +943,14 @@ select only columns we need
 db <- db %>%
   clean_names() %>% 
   select(country_code, year = db_year, score_starting_a_business)
-```
 
+```
 ```{r}
 head(db, 10)
 ```
 
 
-To decrease the number of dropped observations we assume that there is
+To decrease the number of dropped observations we assume that there is NO
 significant difference between 2004 and 2000 in Start Business index
 ```{r}
 db <- db %>% 
@@ -992,7 +1000,7 @@ db_join <- country_year %>%
 head(db_join, 10)
 ```
 ```{r}
-mean(is.na(db_join$start_business))
+sum(is.na(db_join$start_business))
 ```
 
 
@@ -1000,6 +1008,16 @@ mean(is.na(db_join$start_business))
 clean <- clean %>% 
   inner_join(db_join, by = "id", copy = TRUE)
 ```
+
+
+```{r}
+ggplot(clean, aes(start_business, mp_index, color=approach)) +
+  geom_point(alpha = 0.5, size = 5) +
+  theme_minimal()
+```
+
+
+
 
 
 
