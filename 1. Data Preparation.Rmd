@@ -496,42 +496,6 @@ clean %>%
   filter(perish == 1)
 ```
 
-#MOVE TO ANALYSIS
-
-## Outliers
-Finally, lets look on the possible outliers
-
-```{r}
-clean %>%
-  select(year, mp_index, industry) %>%
-  arrange(-mp_index) %>%
-  head(10)
-```
-There are few MP values which are considerable higher or lower then other.
-This might influence the reliability of research. 
-Thus, I will drop them
-
-```{r}
-clean <- clean %>%
-  filter(between(mp_index, 0.005, 0.52))
-```
-
-Looks like I am done with preliminary data preparation 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 ## Load data related to Agricultural support (PSE) and Producer protection
 
 ### Adding Agr. support (PSE) to our data
@@ -1064,9 +1028,5 @@ analysis <- clean %>%
 ```{r}
 saveRDS(clean, file = here("data", "clean data", "Full_data.Rds"))
 saveRDS(analysis, file = here("data", "clean data", "Analysis_data.Rds"))
-```
-
-```{r}
-render("1. Data Preparation.Rmd", md_document(variant = "markdown_github"))
 ```
 

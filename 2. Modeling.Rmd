@@ -25,7 +25,20 @@ set.seed(42)
 load our cleaned data 
 
 ```{r}
-clean <- readRDS(here("data", "clean data", "Clean_data.Rds"))
+analysis_full <- readRDS(here("data", "clean data", "Analysis_data.Rds"))
+```
+
+
+## Remove Outliers
+lets look on the possible outliers
+
+There are few MP values which are considerable higher or lower then other.
+This might influence the reliability of research. 
+Thus, I will drop them
+
+```{r}
+analysis <- analysis_full %>%
+  filter(between(index, 0.005, 0.52))
 ```
 
 
@@ -36,32 +49,9 @@ Rename columns once again.
 And create columns with dummy variables
 
 ```{r}
-glimpse(clean)
+glimpse(analysis)
 ```
 
-
-```{r}
-library(fastDummies)
-
-analysis <- clean %>%
-  select(approach, data_freq, mp_type, mp_index, sfarm_share,
-         industry_fct, country_fct, n_of_obs, after_2005, perish,
-         mean_pse, mean_pp, start_business) %>%
-  rename(app = approach,
-         freq = data_freq,
-         type = mp_type,
-         index = mp_index,
-         ind = industry_fct,
-         count = country_fct,
-         obs_n = n_of_obs) %>%
-  dummy_columns(select_columns = c("freq", "type", "ind", "count", "app"),
-                remove_selected_columns = TRUE)
-```
-
-final quick check of the data
-```{r}
-summary(analysis)
-```
 
 
 ```{r}
@@ -73,47 +63,19 @@ analysis %>%
 
 
 
-
-
-```{r}
-summary(lm(index ~ ., data=analysis))
-```
-
-lets try automatic variable selection
-```{r}
-library(leaps)
-```
-
-```{r}
-auto.select <- regsubsets(log(index) ~ ., data=analysis,
-                          method = "exhaustive", nvmax = 20)
-```
-
-```{r}
-x <- summary(auto.select)
-
-plot(x$bic, main="BIC")
-plot(x$adjr2, main="Adj R^2")
-```
-
-
-So according BIC the oprimal number of variables is around 3
-While according to adj. R^2 - around 8-10
-
-```{r}
-plot(auto.select)
-```
-
-
 ```{r}
 log_lm <- lm(log(index) ~ app_PTA + app_GIM +
                  obs_n + 
+                 freq_Yearly +
                  count_n_america +
                  after_2005 +
                  type_Oligopsony +
                  ind_dairy + ind_meat + ind_cereals + ind_beverages + ind_oils +
-                 mean_pp + mean_pse, 
-         data=analysis)
+                 #perish +
+                 #start_business +
+                 log(mean_pp) + log(mean_pse), 
+         data=analysis, subset = mean_pp < 2)
+
 summary(log_lm)
 ```
 
@@ -148,11 +110,16 @@ stargazer(log_lm, log_lm, se=list(NULL, log_lm_se),
 ```{r}
 lm <- lm(index ~ app_PTA + app_GIM +
                  obs_n + 
+                 freq_Yearly +
                  count_n_america +
                  after_2005 +
                  type_Oligopsony +
-                 ind_dairy + ind_meat + ind_cereals + ind_beverages + ind_oils, 
+                 ind_dairy + ind_meat + ind_cereals + ind_beverages + ind_oils +
+                 #perish +
+                 #start_business +
+                 log(mean_pp) + log(mean_pse), 
          data=analysis)
+
 summary(lm)
 ```
 
@@ -176,6 +143,33 @@ get_robust_se(lm)
 
 
 
+### Tobit model
+
+
+```{r message=FALSE}
+library(censReg)
+```
+
+```{r}
+tobit <- censReg(index ~ app_PTA + app_GIM +
+                 obs_n + 
+                 freq_Yearly +
+                 type_Oligopoly +
+                 count_n_america +
+                 after_2005 +
+                 ind_dairy + ind_meat + ind_cereals + ind_beverages + ind_oils +
+                 #perish +
+                 #start_business +
+                 log(mean_pp) + log(mean_pse),
+                 data = analysis_full)
+
+summary(tobit)
+```
+
+
+
+
+
 ```{r}
 model_1 <- lm(log(index) ~ app_PTA + app_GIM + type_Oligopoly, 
                         data=analysis)
@@ -183,8 +177,8 @@ se_1 <- get_robust_se(model_1)
 
 model_2 <- lm(log(index) ~ app_PTA + app_GIM +
                 type_Oligopoly +
-                obs_n + after_2005 + 
-                freq_Yearly + freq_Quaterly +
+                after_2005 + 
+                freq_Yearly +
                 count_n_america + count_europe, 
          data=analysis)
 se_2 <- get_robust_se(model_2)
@@ -192,7 +186,7 @@ se_2 <- get_robust_se(model_2)
 model_3 <- lm(log(index) ~ app_PTA + app_GIM +
                 type_Oligopoly +
                 obs_n + after_2005 + 
-                freq_Yearly + freq_Quaterly +
+                freq_Yearly + 
                 count_n_america + count_europe +
                 ind_dairy + ind_meat + ind_beverages + ind_cereals + ind_oils, 
          data=analysis)
@@ -213,6 +207,7 @@ se_4 <- get_robust_se(model_4)
 ```{r}
 bptest(model_1)
 ```
+
 ```{r}
 bptest(model_2)
 ```
@@ -225,12 +220,12 @@ bptest(model_3)
 bptest(model_4)
 ```
 
-We can see that all 3 models expesed to the heteroscadasticity issue. 
+We can see that all 3 models exposed to the heteroscadasticity issue. 
 
 
 ## Summary tables
 ```{r}
-stargazer(model_1, model_2, model_3, model_4,
+stargazer(model_1, model_2, model_3, model_4, tobit,
           type = "text",
           keep.stat=c("n", "rsq", "adj.rsq"), 
           title = "Analysis Results",
@@ -244,15 +239,6 @@ stargazer(model_1, model_2, model_3, model_4,
 
 ### F-test 
 
-In the regressions results neither of dummmies regarding frequency of observation was significant. 
-To be completely sure that they are do not have any influence on the MPI lets make an F test. 
-
-```{r}
-F.test.freq <-  linearHypothesis(model_3, c("freq_Yearly", "freq_Quaterly"), 
-                                 white.adjust = "hc1") # Heteroscad. robust F test
-F.test.freq
-```
-According to F test we cannot reject H:0 
 
 Lets check if type there influence of industry on the MPI 
 ```{r}
@@ -260,7 +246,9 @@ industry <- matchCoefs(model_3, "ind") # extract all industry dummies
 F.test.ind <-  linearHypothesis(model_3, industry, white.adjust = "hc1")
 F.test.ind
 ```
-Therefore we reject 0 hypothesis that all types of industry have zero coeficient. 
+Therefore we reject 0 hypothesis that all types of industry have zero coefficient. 
+
+
 
 
 
@@ -268,7 +256,7 @@ Therefore we reject 0 hypothesis that all types of industry have zero coeficient
 ### Determinants of each approach 
 
 
-Finally lets make a linear model for each approahc and check if there is any significant differences in coefitients between them
+Finally lets make a linear model for each approach and check if there is any significant differences in coefficients between them
 
 ```{r}
 GIM <- lm(log(index) ~ type_Oligopoly +
@@ -328,7 +316,12 @@ I think I am done with the analysis
 
 I will work with dataset "clean" again
 
-First of all lets create column with fitst author and year
+```{r}
+clean <- readRDS(here("data", "clean data", "Full_data.Rds"))
+```
+
+
+First of all lets create column with first author and year
 to uniquely identify an article
 ```{r}
 clean <- clean %>%
@@ -361,7 +354,7 @@ table_1 <- clean %>%
 head(table_1)
 ```
 
-```{r include=FALSE}
+```{r}
 table_1 %>%
   stargazer(type="html",
             style = "aer",
@@ -392,7 +385,7 @@ table_2 <-  clean %>%
 table_2
 ```
 
-```{r include=FALSE}
+```{r}
 table_2 %>%
   stargazer(type="html",
             style = "aer",
@@ -452,7 +445,7 @@ table_3
 
 
 Save table
-```{r include=FALSE}
+```{r}
 table_3 %>%
   stargazer(type="html",
             style = "aer",
@@ -506,7 +499,7 @@ table_4
 ```
 
 
-```{r include=FALSE}
+```{r }
 table_4 %>%
   stargazer(type="html",
             style = "aer",
@@ -534,7 +527,7 @@ table_5 <- clean %>%
 table_5
 ```
 
-```{r include=FALSE}
+```{r }
 table_5 %>%
   stargazer(type="html",
             style = "aer",
@@ -547,7 +540,7 @@ table_5 %>%
 
 ### Table 6: Discriptive statistics of variables 
 
-```{r include=FALSE}
+```{r }
 analysis %>%
   as.data.frame() %>%
   stargazer(type="html",
@@ -568,7 +561,7 @@ ind.var.names <- c("Intercept", "PTA", "GIM", "Oligopoly",
 ```
 
 
-```{r include=FALSE}
+```{r }
 stargazer(model_1, model_2, model_3,
           type = "html",
           style = "aer",
@@ -586,7 +579,7 @@ stargazer(model_1, model_2, model_3,
 
 ### Table 8: Methods comparison 
 
-```{r include=FALSE}
+```{r }
 stargazer(PTA, GIM, SFA,
           type = "html",
           style = "aer",
@@ -694,7 +687,8 @@ model_6 <- lm(log(index) ~ app_PTA + app_GIM +
          data=analysis)
 se_6 <- get_robust_se(model_6)
 ```
-```{r message=FALSE, include=FALSE}
+
+```{r }
 stargazer(model_1, model_2, model_3, model_4, model_5, model_6,
           type = "html",
           style = "aer",
@@ -741,7 +735,7 @@ model_3 <- lm(log(index) ~ app_PTA + app_GIM +
 se_3 <- get_robust_se(model_3)
 ```
 
-```{r message=FALSE, include=FALSE}
+```{r}
 stargazer(model_1, model_2, model_3,
           type = "html",
           style = "aer",
@@ -792,7 +786,7 @@ se_3 <- get_robust_se(model_3)
 ```
 
 
-```{r message=FALSE, include=FALSE}
+```{r}
 stargazer(model_1, model_2, model_3,
           type = "html",
           style = "aer",
