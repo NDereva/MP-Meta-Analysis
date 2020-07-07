@@ -30,10 +30,6 @@ path <- here("data", "raw data", "Market Power Articles - Sheet2.csv")
 data <- read_csv(path)
 ```
 
-```{r}
-glimpse(data)
-```
-
 Lets clean the table a bit
 
 ```{r}
@@ -59,7 +55,9 @@ clean %>%
   mutate(prop = round(n / sum(n) * 100, 2)) %>%
   arrange(-n)
 ```
-Clean mispelled rows and filter only for Oligopoly and Oligopsony 
+
+Clean misspelled rows and filter only for Oligopoly and Oligopsony 
+
 ```{r}
 clean <- clean %>%
   mutate(mp_type = if_else(mp_type == "Ologopoly", "Oligopoly", mp_type) ) %>%
@@ -86,7 +84,22 @@ clean %>%
   mutate(prop = round(n / sum(n) * 100, 2)) %>%
   arrange(-n)
 ```
+
 Seems fine
+
+
+```{r}
+clean %>%
+  ggplot(aes(x = fct_reorder(data_freq, mp_index, length),
+             y = mp_index,
+             color = approach)) + 
+  geom_jitter(width = 0.25, height = 0, alpha = 0.6, size = 2) +
+  labs(x = "Industry", y="Market Power Index") +
+  theme_minimal()
+```
+
+
+
 
 Also I'll create new column with number of observations per year
 ```{r}
@@ -99,6 +112,7 @@ clean <- clean %>%
                                     data_freq == "Weekly" ~ 52 ) )
 ```
 
+
 ```{r}
 clean %>%
   group_by(n_obs_per_year) %>%
@@ -106,7 +120,9 @@ clean %>%
   mutate(prop = round(n / sum(n) * 100, 2)) %>%
   arrange(-n)
 ```
-seems correct 
+seems correct
+Most MP observations have Yearly frequency
+
 
 #### Clean and convert approach column
 
@@ -127,6 +143,7 @@ clean <- clean %>%
   mutate(approach = as_factor(approach))
 ```
 
+
 ```{r}
 clean %>%
   group_by(approach) %>%
@@ -134,6 +151,7 @@ clean %>%
   mutate(prop = round(n / sum(n) * 100, 2)) %>%
   arrange(-n)
 ```
+
 Seems correct
 
 #### Clean and transform industry column
@@ -152,14 +170,14 @@ clean the column a bit
 
 ```{r}
 clean <- clean %>%
-  filter(!is.na(industry)) %>%                        # drop N/A
-  mutate(industry_fct = str_to_lower(industry) %>%    # to lowercase
+#  filter(!is.na(industry)) %>%                        # drop N/A
+  mutate(industry_ctg = str_to_lower(industry) %>%    # to lowercase
                           str_trim(side="both") ) 
 ```
 
 ```{r}
 clean %>%
-  select(industry, industry_fct)
+  select(industry, industry_ctg)
 ```
 
 
@@ -179,7 +197,7 @@ sugar <- c("sugar")
 
 ```
 
-I coudln't quickly figure out how tho check the presence of every value in vectors in the industry_fct column for categorisation. 
+I couldn't quickly figure out how tho check the presence of every value in vectors in the industry_fct column for categorization. 
 
 So I will write custom function which returns TRUE if column contains any value in the vector and FALSE in not. 
 
@@ -204,7 +222,7 @@ contains_value <- function(string, vector) {
 
 Test the function 
 ```{r}
-# Function returns TRUE for each row which have any macthes with vector
+# Function returns TRUE for each row which have any matches with vector
 
 col_contain_val <- function(column, vector){
   x <- c()
@@ -217,25 +235,25 @@ col_contain_val <- function(column, vector){
 }
 
 #test if any value in meat column is present in industr_fct column
-print(clean$industry_fct[1:7])
-col_contain_val(clean$industry_fct[1:7], meat)
+print(clean$industry_ctg[1:7])
+col_contain_val(clean$industry_ctg[1:7], meat)
 ```
 Seems like it works fine
 
 ```{r}
 clean <- clean %>%
   mutate(industry_fct = case_when(
-                          col_contain_val(industry_fct, dairy) ~ "dairy",
-                          col_contain_val(industry_fct, meat) ~ "meat",
-                          col_contain_val(industry_fct, cereals) ~ "cereals",
-                          col_contain_val(industry_fct, oils) ~ "oils",
-                          col_contain_val(industry_fct, beverages) ~ "beverages",
-                          col_contain_val(industry_fct, tobaco) ~ "tobacco",
-                          col_contain_val(industry_fct, fruits) ~ "fruits",
-                          col_contain_val(industry_fct, paper) ~ "paper",
-                          col_contain_val(industry_fct, bread_flour) ~ "bread or flour",
-                          col_contain_val(industry_fct, sugar) ~ "sugar",
-                          TRUE ~ industry_fct
+                          col_contain_val(industry_ctg, dairy) ~ "dairy",
+                          col_contain_val(industry_ctg, meat) ~ "meat",
+                          col_contain_val(industry_ctg, cereals) ~ "cereals",
+                          col_contain_val(industry_ctg, oils) ~ "oils",
+                          col_contain_val(industry_ctg, beverages) ~ "beverages",
+                          col_contain_val(industry_ctg, tobaco) ~ "tobacco",
+                          col_contain_val(industry_ctg, fruits) ~ "fruits",
+                          col_contain_val(industry_ctg, paper) ~ "paper",
+                          col_contain_val(industry_ctg, bread_flour) ~ "bread or flour",
+                          col_contain_val(industry_ctg, sugar) ~ "sugar",
+                          TRUE ~ industry_ctg
                                 )
          )
 
@@ -255,7 +273,7 @@ clean %>%
 ```
 Probably I shouldn't use groups with less then 10 observations. The results might be unreliable.
 
-now lets convert industry_fct to factor 
+#### now lets convert industry_fct to factor 
 
 ```{r}
 clean <- clean %>%
@@ -283,7 +301,7 @@ clean %>%
 ```
 Seems that there is an outlier in cereals
 
-#### Clean country column 
+### Clean country column 
 
 ```{r}
 clean %>%
@@ -338,7 +356,7 @@ Check the result
 
 ```{r}
 clean %>% 
-  distinct(country, country_st)
+  distinct(country, country_st) %>% head()
 ```
 Beautiful
 
@@ -372,12 +390,13 @@ clean %>%
              y = mp_index,
              color = approach)) + 
   geom_jitter(width = 0.25, height = 0, alpha = 0.6, size = 2) +
-  labs(x = "Country", y="Market Power Index") +
+  labs(x = "Geographical Position", y="Market Power Index") +
   theme_minimal()
 ```
 
 
 ### add column with number of observations in article
+
 ```{r}
 clean <- clean %>%
   separate(period, into = c("obs_start", "obs_stop"), 
@@ -390,13 +409,16 @@ clean <- clean %>%
 clean %>%
   select(obs_start, obs_stop, obs_years, n_obs_per_year, n_of_obs) %>%
   head(10)
+
 ```
 Seems correct 
 
-check for na
+check for missing data
 ```{r}
 sum(is.na(clean$n_of_obs))
+
 ```
+
 
 
 ```{r}
@@ -410,7 +432,7 @@ clean %>%
     labs(x = "Number of observations (log10)",
          y = "Market Power Index") +
   easy_add_legend_title("Approach used:")
-  
+
 ```
 
 ### Create dummy variable after 2005
@@ -447,23 +469,23 @@ clean %>%
 ### Dummy for perishable goods
 
 ```{r}
-perishables <- c("beef", "pork", "meat", "milk", "paultry", 
-                 "poultry", "egg", "fish", "salmon")
+perishables <- c("beef", "pork", "meat", "milk", "paultry", "cheese", "bakery",
+                 "poultry", "egg", "fish", "salmon", "hog", "ice", "dairy",
+                 "cake", "cattle")
 
 clean <- clean %>%
   mutate(
           perish = case_when(
-                        col_contain_val(stringr::str_to_lower(industry),
+                        col_contain_val(industry_ctg,
                                         perishables) ~ 1,
-                                        TRUE ~ 0) 
-        )
+                                        TRUE ~ 0) )  %>%
+  # set 0 to non perishable goods which mistakenly was missclassified
+  mutate(perish = case_when(
+                        col_contain_val(industry_ctg,
+                                        c("cond", "rice")) ~ 0,
+                                        TRUE ~ perish) )
 ```
 
-manually change improper values
-
-```{r}
-
-```
 
 
 check results 
@@ -474,7 +496,7 @@ clean %>%
   filter(perish == 1)
 ```
 
-
+#MOVE TO ANALYSIS
 
 ## Outliers
 Finally, lets look on the possible outliers
@@ -522,7 +544,6 @@ data is taken from OECD website
 ```{r}
 support <- read_csv( here("data", "raw data",
                           "Agricultural support (PSE) OESD .csv") )
-glimpse(support)
 ```
 
 We decided to use PSE index in our analysis
@@ -557,7 +578,7 @@ support <-  support %>%
 head(support)
 ```
 Seems correct 
-Now we need to join pse indicator to out main data set.
+Now we need to join PSE indicator to out main data set.
 To do so, we need to unify country names across data sets.
 Seems that contrycode package might really help.
 
@@ -575,11 +596,13 @@ support$country <- countrycode(sourcevar = support$location,
                     nomatch = NULL)
 ```
 
+
 lets check the results
 
 ```{r}
 support %>% 
-  distinct(location, country)
+  distinct(location, country) %>% 
+  head()
 ```
 Beautiful 
 
@@ -647,7 +670,7 @@ country_year <- clean %>%
   # and drop moth and day
   mutate(year = year(year))
 
-country_year
+country_year %>% head()
 ```
 
 Now we can easily join country_year with PSE data to calculate the average
@@ -675,8 +698,9 @@ head(mean_pse)
 
 ```{r}
 mean(is.na(mean_pse$mean_pse))
+
 ```
-Unfortunately we 45% of observations is missing
+Unfortunately we 4.5% of observations is missing
 Probably this is because many articles use too old data for the MPI estimation
 While PSE index data is available starting from 1986,
 
@@ -699,6 +723,14 @@ ggplot(clean, aes(mean_pse, mp_index, color=approach)) +
 ```
 
 
+Check observations with negative PSE
+```{r}
+clean %>% 
+  filter(!is.na(mean_pse), mean_pse < 0) %>% 
+  select(country_st, id, mean_pse) %>% 
+  mutate(log_mean_pse = log(mean_pse))
+```
+Ukraine ¯\_(ツ)_/¯
 
 
 ### Adding Producer Protection (PP) index to our data
@@ -713,7 +745,6 @@ Data source is the same
 ```{r}
 PP <- read_csv( here("data", "raw data",
                      "Producer Protection (PP) OECD.csv") )
-glimpse(PP)
 ```
 
 
@@ -740,13 +771,15 @@ PP$country <- countrycode(sourcevar = PP$location,
                     nomatch = NULL)
 
 PP %>% 
-  distinct(location, country)
+  distinct(location, country) %>% 
+  head()
 ```
 
 
 ```{r}
 PP <- PP %>% 
   select(country, year, PP)
+
 ```
 
 
@@ -770,7 +803,7 @@ head(mean_pp)
 ```{r}
 mean(is.na(mean_pp))
 ```
-Luckily there is only 22% of missing values in mean PP indicator
+Luckily there is only 2.2% of missing values in mean PP indicator
 
 ```{r}
 clean <- clean %>% 
@@ -778,27 +811,12 @@ clean <- clean %>%
 ```
 
 
-Check observations with negative PSE
-```{r}
-clean %>% 
-  filter(!is.na(mean_pse), mean_pse < 0) %>% 
-  select(country_st, id, mean_pse) %>% 
-  mutate(log_mean_pse = log(mean_pse))
-```
-
-```{r}
-clean %>% 
-  filter(id == 104)
-```
-
 
 
 ```{r}
-ggplot(clean, aes(mean_pp, mp_index, color=approach)) +
-  geom_point(alpha = 0.7, size = 5, shape = 1) +
-  theme_minimal()
-```
 
+```
+Maybe I should not use those 4 outliers in the analysis
 
 
 ## Small Farms Share
@@ -820,11 +838,10 @@ farms <- read_csv(here("data", "raw data", "Farm structure EU",
                        "ef_kvftaa_1_Data.csv"),
                   na = c("", "NA", ":") # NA is coded as ":"
                   )
-glimpse(farms)
 ```
 
 
-drop columns we dont need and rename ones we need
+drop columns we don't need and rename ones we need
 
 ```{r}
 farms <- farms %>% 
@@ -838,7 +855,7 @@ glimpse(farms)
 Standardize country names
 
 ```{r}
-guess_field(farms$country)
+guess_field(farms$country) %>% head()
 ```
 
 ```{r}
@@ -903,19 +920,31 @@ sfarm <-country_year %>%
   ungroup()
 
 head(sfarm_share)
+
 ```
 
 
 ```{r}
-mean(is.na(sfarm))
+sum(is.na(sfarm))
 ```
-
+A lot of missing observations
 
 
 ```{r}
 clean <- clean %>% 
   inner_join(sfarm, by = "id", copy = TRUE)
 ```
+
+
+
+
+```{r}
+ggplot(clean, aes(sfarm_share, mp_index, color=approach)) +
+  geom_point(alpha = 0.4, size = 5) +
+  theme_minimal()
+```
+
+
 
 
 ## Add data from Doing Buisiness
@@ -991,8 +1020,9 @@ db_join <- country_year %>%
 
 head(db_join, 10)
 ```
+
 ```{r}
-mean(is.na(db_join$start_business))
+sum(is.na(db_join$start_business))
 ```
 
 
@@ -1003,7 +1033,40 @@ clean <- clean %>%
 
 
 
+
+
+### Make an object only with columns we need for the further analysis 
+
 ```{r}
-saveRDS(clean, file = "data/clean data/Clean_data.Rds")
+drop_col <- c("id", "year", "authors", "title", "country", "industry", "period",
+              "obs_start", "obs_stop", "n_obs_per_year", "industry_ctg",
+              "country_st", "obs_years")
+
+analysis <- clean %>%
+  # select all except of drop_col
+  select(-all_of(drop_col)) %>% 
+  rename(app = approach,
+         freq = data_freq,
+         type = mp_type,
+         index = mp_index,
+         ind = industry_fct,
+         count = country_fct,
+         obs_n = n_of_obs) %>%
+  # create dummies from category columns
+  fastDummies::dummy_columns(select_columns = c("freq", "type", "ind",
+                                                "count", "app"),
+                remove_selected_columns = TRUE)
+```
+
+
+
+
+```{r}
+saveRDS(clean, file = here("data", "clean data", "Full_data.Rds"))
+saveRDS(analysis, file = here("data", "clean data", "Analysis_data.Rds"))
+```
+
+```{r}
+render("1. Data Preparation.Rmd", md_document(variant = "markdown_github"))
 ```
 
