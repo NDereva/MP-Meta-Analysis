@@ -45,6 +45,35 @@ clean <- data %>%
 glimpse(clean)
 ```
 
+#### Clean and convert approach column
+
+```{r}
+clean %>%
+  group_by(approach) %>%
+  summarise(n = n()) %>%
+  mutate(prop = round(n / sum(n) * 100, 2)) %>%
+  arrange(-n)
+```
+
+
+I will filter out articles in which I am not sure
+
+```{r}
+clean <- clean %>%
+  filter(approach %in% c("PTA", "GIM", "SFA")) %>%
+  mutate(approach = as_factor(approach))
+```
+
+
+```{r}
+clean %>%
+  group_by(approach) %>%
+  summarise(n = n()) %>%
+  mutate(prop = round(n / sum(n) * 100, 2)) %>%
+  arrange(-n)
+```
+
+Seems correct
 
 #### Converting mp_type to categorical dtype
 
@@ -93,7 +122,7 @@ clean %>%
   ggplot(aes(x = fct_reorder(data_freq, mp_index, length),
              y = mp_index,
              color = approach)) + 
-  geom_jitter(width = 0.25, height = 0, alpha = 0.6, size = 2) +
+  geom_jitter(width = 0.3, height = 0, alpha = 0.6, size = 2) +
   labs(x = "Industry", y="Market Power Index") +
   theme_minimal()
 ```
@@ -124,35 +153,7 @@ seems correct
 Most MP observations have Yearly frequency
 
 
-#### Clean and convert approach column
 
-```{r}
-clean %>%
-  group_by(approach) %>%
-  summarise(n = n()) %>%
-  mutate(prop = round(n / sum(n) * 100, 2)) %>%
-  arrange(-n)
-```
-
-
-I will filter out articles in which I am not sure
-
-```{r}
-clean <- clean %>%
-  filter(approach %in% c("PTA", "GIM", "SFA")) %>%
-  mutate(approach = as_factor(approach))
-```
-
-
-```{r}
-clean %>%
-  group_by(approach) %>%
-  summarise(n = n()) %>%
-  mutate(prop = round(n / sum(n) * 100, 2)) %>%
-  arrange(-n)
-```
-
-Seems correct
 
 #### Clean and transform industry column
 
@@ -166,36 +167,6 @@ clean %>%
 
 With this one it will be a bit more complicated since there are plenty of categories
 
-clean the column a bit
-
-```{r}
-clean <- clean %>%
-#  filter(!is.na(industry)) %>%                        # drop N/A
-  mutate(industry_ctg = str_to_lower(industry) %>%    # to lowercase
-                          str_trim(side="both") ) 
-```
-
-```{r}
-clean %>%
-  select(industry, industry_ctg)
-```
-
-
-create vectors which contain key words for further grouping
-```{r}
-dairy <- c("milk", "dairy", "cheese", "butter")
-meat <- c("meat", "pork", "beef", "hog", "poultry", "livestock", "cattle")
-cereals <- c("wheat", "oat", "triticale", "grain", "cereal", "barley")
-oils <- c("canola", "oil", "fat")
-beverages <- c("tea", "beer", "water", "brew", "coffee", "liquor", "drink",
-               "spirit", "wine", "brandy", "cocoa", "beverage")
-tobaco <- c("tobacco", "cigar")
-fruits <- c("fruit", "banana")
-paper <- c("pulp", "paper", "wood", "sawlog")
-bread_flour <- c("bread", "flour")
-sugar <- c("sugar")
-
-```
 
 I couldn't quickly figure out how tho check the presence of every value in vectors in the industry_fct column for categorization. 
 
@@ -220,46 +191,62 @@ contains_value <- function(string, vector) {
 
 ```
 
-Test the function 
-```{r}
-# Function returns TRUE for each row which have any matches with vector
 
-col_contain_val <- function(column, vector){
-  x <- c()
+And another function which will classify industry into the given groups
+Function that takes a industry string and classify it into given set of groups
+function will check if  any key-words is contained in the input string
+
+```{r}
+classify_industry <- function(non_classified_str) {
   
-  for (i in 1:length(column) ) {
-    x[i] <- contains_value(column[i], vector)
-  }
+  # define classification vectors
   
-  return(x)
+  dairy <- c("milk", "dairy", "cheese", "butter")
+  meat <- c("meat", "pork", "beef", "hog", "poultry", "livestock", "cattle", "paultry")
+  cereals <- c("wheat", "oat", "triticale", "grain", "cereal", "barley")
+  oils <- c("canola", "oil", "fat")
+  beverages <- c("tea", "beer", "water", "brew", "coffee", "liquor", "drink",
+                 "spirit", "wine", "brandy", "cocoa", "beverage")
+  tobaco <- c("tobacco", "cigar")
+  fruits <- c("fruit", "banana")
+  paper <- c("pulp", "paper", "wood", "sawlog")
+  bread_flour <- c("bread", "flour")
+  sugar <- c("sugar")
+  
+  # clean input string a bit
+  non_classified_str <- str_to_lower(non_classified_str) %>% 
+                            str_trim(side="both")
+  
+  classified <- case_when(
+        contains_value(non_classified_str, dairy) ~ "dairy",
+        contains_value(non_classified_str, meat) ~ "meat",
+        contains_value(non_classified_str, cereals) ~ "cereals",
+        contains_value(non_classified_str, oils) ~ "oils",
+        contains_value(non_classified_str, beverages) ~ "beverages",
+        contains_value(non_classified_str, tobaco) ~ "tobacco",
+        contains_value(non_classified_str, fruits) ~ "fruits",
+        contains_value(non_classified_str, paper) ~ "paper",
+        contains_value(non_classified_str, bread_flour) ~ "bread or flour",
+        contains_value(non_classified_str, sugar) ~ "sugar",
+        TRUE ~ non_classified_str
+                          )
+  return(classified)
 }
-
-#test if any value in meat column is present in industr_fct column
-print(clean$industry_ctg[1:7])
-col_contain_val(clean$industry_ctg[1:7], meat)
 ```
-Seems like it works fine
+
+Check the function results
+```{r}
+clean %>% 
+  mutate(classified = map_chr(industry, classify_industry)) %>% 
+  select(industry, classified)
+```
 
 ```{r}
-clean <- clean %>%
-  mutate(industry_fct = case_when(
-                          col_contain_val(industry_ctg, dairy) ~ "dairy",
-                          col_contain_val(industry_ctg, meat) ~ "meat",
-                          col_contain_val(industry_ctg, cereals) ~ "cereals",
-                          col_contain_val(industry_ctg, oils) ~ "oils",
-                          col_contain_val(industry_ctg, beverages) ~ "beverages",
-                          col_contain_val(industry_ctg, tobaco) ~ "tobacco",
-                          col_contain_val(industry_ctg, fruits) ~ "fruits",
-                          col_contain_val(industry_ctg, paper) ~ "paper",
-                          col_contain_val(industry_ctg, bread_flour) ~ "bread or flour",
-                          col_contain_val(industry_ctg, sugar) ~ "sugar",
-                          TRUE ~ industry_ctg
-                                )
-         )
-
-clean %>%
-  select(industry, industry_fct)
+clean <- clean %>% 
+  mutate(industry_fct = map_chr(industry, classify_industry))
 ```
+
+
 Seems that the values were changed correctly
 
 Lets aggregate the data in column
@@ -274,7 +261,7 @@ clean %>%
 Probably I shouldn't use groups with less then 10 observations. The results might be unreliable.
 
 #### now lets convert industry_fct to factor 
-
+and keep only groups with more then 10 observations
 ```{r}
 clean <- clean %>%
   mutate(industry_fct = as_factor(industry_fct)) %>%
@@ -1029,4 +1016,5 @@ analysis <- clean %>%
 saveRDS(clean, file = here("data", "clean data", "Full_data.Rds"))
 saveRDS(analysis, file = here("data", "clean data", "Analysis_data.Rds"))
 ```
+
 
