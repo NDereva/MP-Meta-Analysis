@@ -26,8 +26,7 @@ set.seed(42)
 
 
 ```{r}
-path <- here("data", "raw data", "Market Power Articles - Sheet2.csv")
-data <- read_csv(path)
+data <- read_csv(here("data", "raw data", "Market Power Articles - Sheet2.csv"))
 ```
 
 Lets clean the table a bit
@@ -304,48 +303,39 @@ clean %>%
 Seems that countries can be categorized into 3 main groups USA, EU and Australia
 I am not sure about Australia since most of the observations are from single article.
 
-```{r}
-# Vector with all of the Europe countries 
 
-europe <- c(
-        "Austria",	"Italy",
-        "Belgium",	"Latvia",
-        "Bulgaria",	"Lithuania",
-        "Croatia",	"Luxembourg",
-        "Cyprus",	  "Malta",
-        "Czech Republic",	"Netherlands",
-        "Denmark",	"Poland",
-        "Estonia",	"Portugal",
-        "Finland",	"Romania",
-        "France",	  "Slovakia",
-        "Germany",	"Slovenia",
-        "Greece",	  "Spain",
-        "Hungary",	"Sweden",
-        "Ireland",  "EU",
-        "Norway", "UK", "United Kingdom"
-        )
+I will use country names a lot with different data sets, so it is important to make
+sure that I countries written in the same way everywhere. 
 
-developing <- c("Ukraine", "Brazil", "China", "Haiti", "India",
-                "Kenya", "Sri Lanka")
-```
-
-
-Lets also standardize country names 
+I will create small function which will standardize country names with the help of
+countrycode package
 
 ```{r}
-clean$country_st <-  countrycode(sourcevar = clean$country,
-                        origin = "country.name",
+standatise_country_name <- function(old_country_name, 
+                                    initial_code_scheme = "country.name") {
+  
+  new_country_name <- countrycode(sourcevar = old_country_name,
+                        origin = initial_code_scheme,
                         destination = "country.name",
                         warn = TRUE,
                         nomatch = NULL)
+  }
 ```
-Check the result
 
+check function
 ```{r}
 clean %>% 
-  distinct(country, country_st) %>% head()
+  mutate(country_st = standatise_country_name(country)) %>% 
+  distinct(country, country_st)
 ```
-Beautiful
+seems that it works well 
+
+```{r}
+clean <- clean %>% 
+  mutate(country = standatise_country_name(country))
+```
+
+
 
 
 create country_fct column
@@ -353,12 +343,27 @@ create country_fct column
 ```{r}
 clean <- clean %>%
   mutate(country_fct = case_when(
-                        country_st %in% europe ~ "europe",
-                        col_contain_val(country_st, c("United States",
-                                                      "Canada")) ~ "n_america",
-                        #col_contain_val(country_st, developing) ~ "developing",
-                        #col_contain_val(country, "Australia") ~ "Australia",
-                        TRUE ~ "other")
+              country %in% standardise_aes_names(
+                #vector with European countries
+                              c("Austria",	"Italy",
+                                "Belgium",	"Latvia",
+                                "Bulgaria",	"Lithuania",
+                                "Croatia",	"Luxembourg",
+                                "Cyprus",	  "Malta",
+                                "Czech Republic",	"Netherlands",
+                                "Denmark",	"Poland",
+                                "Estonia",	"Portugal",
+                                "Finland",	"Romania",
+                                "France",	  "Slovakia",
+                                "Germany",	"Slovenia",
+                                "Greece",	  "Spain",
+                                "Hungary",	"Sweden",
+                                "Ireland",  "EU",
+                                "Norway", "UK", "United Kingdom")
+                  # all those countries will be set to europe
+                                                    ) ~ "europe",
+              country %in% c("United States", "Canada") ~ "n_america",
+              TRUE ~ "other")
          ) %>%
   mutate(country_fct = as_factor(country_fct))
   
@@ -369,6 +374,7 @@ clean %>%
   arrange(-n)
 ```
 Seems fine. 
+
 
 
 ```{r}
