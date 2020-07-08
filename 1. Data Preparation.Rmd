@@ -175,6 +175,8 @@ So I will write custom function which returns TRUE if column contains any value 
 # helper function. Returns TRUE if any value in vector match string
 contains_value <- function(string, vector) {
   
+  string <- str_to_lower(string) %>% str_trim(side="both")
+  
   matched <- FALSE
   
   for (word in vector) {
@@ -212,9 +214,6 @@ classify_industry <- function(non_classified_str) {
   bread_flour <- c("bread", "flour")
   sugar <- c("sugar")
   
-  # clean input string a bit
-  non_classified_str <- str_to_lower(non_classified_str) %>% 
-                            str_trim(side="both")
   
   classified <- case_when(
         contains_value(non_classified_str, dairy) ~ "dairy",
@@ -462,20 +461,25 @@ clean %>%
 ### Dummy for perishable goods
 
 ```{r}
-perishables <- c("beef", "pork", "meat", "milk", "paultry", "cheese", "bakery",
-                 "poultry", "egg", "fish", "salmon", "hog", "ice", "dairy",
-                 "cake", "cattle")
-
 clean <- clean %>%
   mutate(
           perish = case_when(
-                        col_contain_val(industry_ctg,
-                                        perishables) ~ 1,
+                        map_lgl(industry, ~ contains_value(.x,
+                        # if industry contains any of values below it is considered
+                        # to be perishable and it will be set to 1 and 0 otherwise
+                                      c("beef", "pork", "meat", "milk",
+                                        "paultry", "cheese", "bakery",
+                                        "poultry", "egg", "fish",
+                                        "salmon", "hog", "ice", "dairy",
+                                        "cake", "cattle"))) ~ 1,
+                        
                                         TRUE ~ 0) )  %>%
   # set 0 to non perishable goods which mistakenly was missclassified
   mutate(perish = case_when(
-                        col_contain_val(industry_ctg,
-                                        c("cond", "rice")) ~ 0,
+                        map_lgl(industry, ~ contains_value(.x,
+                        # this chunk fix the bug that cond. milk and rise were
+                        # classified as perishables
+                                        c("cond", "rice"))) ~ 0,
                                         TRUE ~ perish) )
 ```
 
@@ -488,6 +492,8 @@ clean %>%
   select(industry, perish) %>% 
   filter(perish == 1)
 ```
+Seems correct
+
 
 ## Load data related to Agricultural support (PSE) and Producer protection
 
