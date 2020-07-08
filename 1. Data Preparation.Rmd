@@ -203,13 +203,14 @@ classify_industry <- function(non_classified_str) {
   # define classification vectors
   
   dairy <- c("milk", "dairy", "cheese", "butter")
-  meat <- c("meat", "pork", "beef", "hog", "poultry", "livestock", "cattle", "paultry")
+  meat <- c("meat", "pork", "beef", "hog", "poultry", "livestock", "cattle",
+            "paultry", "pig")
   cereals <- c("wheat", "oat", "triticale", "grain", "cereal", "barley")
   oils <- c("canola", "oil", "fat")
   beverages <- c("tea", "beer", "water", "brew", "coffee", "liquor", "drink",
                  "spirit", "wine", "brandy", "cocoa", "beverage")
   tobaco <- c("tobacco", "cigar")
-  fruits <- c("fruit", "banana")
+  fruits <- c("fruit", "banana", "horticulture")
   paper <- c("pulp", "paper", "wood", "sawlog")
   bread_flour <- c("bread", "flour")
   sugar <- c("sugar")
@@ -226,7 +227,7 @@ classify_industry <- function(non_classified_str) {
         contains_value(non_classified_str, paper) ~ "paper",
         contains_value(non_classified_str, bread_flour) ~ "bread or flour",
         contains_value(non_classified_str, sugar) ~ "sugar",
-        TRUE ~ non_classified_str
+        TRUE ~ "other"
                           )
   return(classified)
 }
@@ -552,11 +553,7 @@ Seems that OECD uses one of beforewritten country codes
 lets convert it to the regular English country names
 
 ```{r}
-support$country <- countrycode(sourcevar = support$location,
-                    origin = "genc3c",
-                    destination = "country.name",
-                    warn = TRUE,
-                    nomatch = NULL)
+support$country <- map_chr(support$location, ~ standatise_country_name(.x, "genc3c"))
 ```
 
 
@@ -582,27 +579,23 @@ Since OECD data not provide PSE data related to the individual EU countries
 we will have to use EU28 aggregate PSE information 
 
 ```{r}
-EU28 <- countrycode(
-        sourcevar = c(
-        "Austria",	"Italy",
-        "Belgium",	"Latvia",
-        "Bulgaria",	"Lithuania",
-        "Croatia",	"Luxembourg",
-        "Cyprus",	  "Malta",
-        "Czech Republic",	"Netherlands",
-        "Denmark",	"Poland",
-        "Estonia",	"Portugal",
-        "Finland",	"Romania",
-        "France",	  "Slovakia",
-        "Germany",	"Slovenia",
-        "Greece",	  "Spain",
-        "Hungary",	"Sweden",
-        "Ireland", "United Kingdom"
-                      ),
-            origin = "country.name",
-            destination = "country.name",
-            warn = TRUE,
-            nomatch = NULL)
+EU28 <- standatise_country_name( c(
+                      "Austria",	"Italy",
+                      "Belgium",	"Latvia",
+                      "Bulgaria",	"Lithuania",
+                      "Croatia",	"Luxembourg",
+                      "Cyprus",	  "Malta",
+                      "Czech Republic",	"Netherlands",
+                      "Denmark",	"Poland",
+                      "Estonia",	"Portugal",
+                      "Finland",	"Romania",
+                      "France",	  "Slovakia",
+                      "Germany",	"Slovenia",
+                      "Greece",	  "Spain",
+                      "Hungary",	"Sweden",
+                      "Ireland", "United Kingdom"
+                                    )
+                                )
 ```
 
 Lets estimate average PSE related to each MPI observation 
@@ -611,9 +604,7 @@ Fist of all let's make a column which contain all the years during which
 each MPI was estimated
 ```{r}
 country_year <- clean %>%
-  select(country_st, obs_start, obs_stop) %>%
-  # change names of EU countries to "EU28" to be able to join with
-
+  select(country, obs_start, obs_stop) %>%
   # create unique identification of each MPI
   tibble::rowid_to_column("id") %>%   
   # transform start and end date to one column 
@@ -626,7 +617,7 @@ country_year <- clean %>%
   complete(year = seq(min(year), max(year), by ="year")) %>% 
   ungroup() %>% 
   #drop start_stop columns since we don't need it
-  select(id, country = country_st, year) %>% 
+  select(id, country, year) %>% 
   # fill empty values
   fill(country, .direction = "down") %>%
   # convert datetype to keep just year information
@@ -690,7 +681,7 @@ Check observations with negative PSE
 ```{r}
 clean %>% 
   filter(!is.na(mean_pse), mean_pse < 0) %>% 
-  select(country_st, id, mean_pse) %>% 
+  select(country, id, mean_pse) %>% 
   mutate(log_mean_pse = log(mean_pse))
 ```
 Ukraine ¯\_(ツ)_/¯
@@ -727,11 +718,7 @@ head(PP)
 
 
 ```{r}
-PP$country <- countrycode(sourcevar = PP$location,
-                    origin = "genc3c",
-                    destination = "country.name",
-                    warn = TRUE,
-                    nomatch = NULL)
+PP$country <- map_chr(PP$location, ~ standatise_country_name(.x, "genc3c"))
 
 PP %>% 
   distinct(location, country) %>% 
@@ -777,7 +764,9 @@ clean <- clean %>%
 
 
 ```{r}
-
+ggplot(clean, aes(mean_pp, mp_index, color=approach)) +
+  geom_point(alpha = 0.7, size = 5, shape = 1) +
+  theme_minimal()
 ```
 Maybe I should not use those 4 outliers in the analysis
 
@@ -818,15 +807,11 @@ glimpse(farms)
 Standardize country names
 
 ```{r}
-guess_field(farms$country) %>% head()
+guess_field(farms$country) %>% head(3)
 ```
 
 ```{r}
-farms$country <- countrycode(sourcevar = farms$country,
-                    origin = "country.name.en",
-                    destination = "country.name",
-                    warn = TRUE,
-                    nomatch = NULL)
+farms$country <- standatise_country_name(farms$country)
 ```
 
 
@@ -850,9 +835,9 @@ sfarm_share <- farms %>%
               values_from = output_eur) %>% 
   group_by(country, year) %>%
   clean_names() %>% 
-  mutate(sfarms_total = zero_ha + less_than_2_ha + from_2_to_4_9_ha +
-                        from_5_to_9_9_ha + from_10_to_19_9_ha,
-         sfarms_share = sfarms_total / total * 100) %>% 
+  mutate(sfarms = sum(zero_ha, less_than_2_ha, from_2_to_4_9_ha,
+                        from_5_to_9_9_ha, from_10_to_19_9_ha, na.rm = TRUE),
+         sfarms_share = sfarms / total * 100) %>% 
   ungroup() %>% 
   # add data for 2000 and 2018
   select(country, year, sfarms_share) %>% 
@@ -882,7 +867,7 @@ sfarm <-country_year %>%
   summarise(sfarm_share = mean(sfarm_share, na.rm=TRUE)) %>% 
   ungroup()
 
-head(sfarm_share)
+head(sfarm)
 
 ```
 
@@ -907,10 +892,157 @@ ggplot(clean, aes(sfarm_share, mp_index, color=approach)) +
   theme_minimal()
 ```
 
+## The same data but categorised by industry
 
 
 
-## Add data from Doing Buisiness
+```{r warning=FALSE}
+
+farms_full <- read_csv(here("data", "raw data", "Farm structure EU",
+                       "ef_kvftaa_1_Data_full.csv"),
+                  na = c("", "NA", ":") # NA is coded as ":"
+                  )
+```
+
+
+drop columns we don't need and rename ones we need
+
+```{r}
+farms_full <- farms_full %>% 
+  clean_names() 
+
+farms_full %>% glimpse()
+```
+
+The data set is a bit redundant
+filter only information we need
+
+```{r}
+farms_full <- farms_full %>% 
+  filter(indic_ef == "Euro: Standard output (SO)",
+         farmtype != "Total") %>% 
+  select(-flag_and_footnotes, -indic_ef) %>% 
+  select(country = geo, agrarea, industry = farmtype,
+         year = time, output_eur = value)
+
+farms_full %>% glimpse()
+```
+
+
+We need to transform industry to match the main dataset
+```{r}
+farms_full %>% 
+  distinct(industry) 
+```
+
+
+
+
+remove "(calculated with Standard Output)"
+```{r}
+farms_full <-  farms_full %>% 
+  mutate(industry = str_remove(industry, pattern = " \\(.+\\)")) 
+```
+
+Try to classify with the function we already created
+```{r}
+farms_full %>% 
+  select(industry) %>% 
+  distinct() %>%
+  mutate(industry_cat = map_chr(industry, ~ classify_industry(.x))) 
+
+```
+
+classification function we created before works satisfactory
+
+
+```{r}
+# A bit long to run
+farms_full <- farms_full %>% 
+  mutate(industry_cat = map_chr(industry, ~ classify_industry(.x))) %>% 
+  select(-industry)
+```
+
+change column position
+```{r}
+farms_full <- farms_full %>% 
+  select(country, industry_cat, year, everything())
+```
+
+
+
+
+
+```{r}
+farms_full_to_join <- farms_full %>%
+  pivot_wider(names_from = agrarea, 
+              values_from = output_eur,
+              values_fn = sum) %>%      # to have a number in cell, it's list otherwise
+  clean_names() %>% 
+  group_by(country, year, industry_cat) %>%
+  mutate(sfarms = sum(zero_ha, less_than_2_ha, from_2_to_4_9_ha,
+                        from_5_to_9_9_ha, from_10_to_19_9_ha, na.rm = TRUE),
+         sfarms_share = sfarms / total * 100) %>% 
+  # add data for 2000 and 2018
+  select(country,industry_cat, year, sfarms_share) %>% 
+  pivot_wider(names_from = year, values_from = sfarms_share) %>%
+  mutate(`2000` = `2005`, `2018` = `2013`, `1995` = `2005`) %>% 
+  pivot_longer(cols = `2005`:`1995`,
+               names_to = "year",
+               values_to = "sfarm_share") %>% 
+  mutate(year = as.numeric(year)) %>% 
+  filter(!is.na(sfarm_share)) %>% 
+  mutate(country = map_chr(country, ~ standatise_country_name(.x)))
+
+head(farms_full_to_join)
+```
+
+
+
+```{r}
+ggplot(farms_full_to_join, aes(sfarm_share) ) +
+  geom_density() +
+  facet_grid(rows = vars(industry_cat))
+
+```
+
+```{r}
+clean$industry_cat <- map_chr(clean$industry, ~ classify_industry(.x))
+```
+
+
+
+```{r}
+country_ind_year <-  country_year %>% 
+  left_join(clean[c("id", "industry_cat")], by = "id" ) %>% 
+  select(id, country, industry_cat, year)
+
+head(country_ind_year)
+```
+
+
+```{r}
+sfarm_by_cat <-country_ind_year %>%
+  left_join(farms_full_to_join, 
+            by = c("country", "industry_cat", "year"),
+            copy = TRUE) %>% 
+  # calculate an average PSE index attributed to each MPI observation
+  group_by(id) %>% 
+  summarise(sfarm_share_by_cat = mean(sfarm_share, na.rm=TRUE)) %>% 
+  ungroup()
+
+head(sfarm_by_cat)
+```
+
+Finally join to main data set 
+
+```{r}
+clean <- clean %>% 
+  inner_join(sfarm_by_cat, by = "id", copy = TRUE)
+```
+
+
+# Add data from Doing Buisiness
 
 
 
@@ -1002,8 +1134,8 @@ clean <- clean %>%
 
 ```{r}
 drop_col <- c("id", "year", "authors", "title", "country", "industry", "period",
-              "obs_start", "obs_stop", "n_obs_per_year", "industry_ctg",
-              "country_st", "obs_years")
+              "obs_start", "obs_stop", "n_obs_per_year",
+              "obs_years", "industry_cat")
 
 analysis <- clean %>%
   # select all except of drop_col

@@ -354,7 +354,7 @@ table_1 <- clean %>%
 head(table_1)
 ```
 
-```{r}
+```{r include=FALSE}
 table_1 %>%
   stargazer(type="html",
             style = "aer",
@@ -385,7 +385,7 @@ table_2 <-  clean %>%
 table_2
 ```
 
-```{r}
+```{r include=FALSE}
 table_2 %>%
   stargazer(type="html",
             style = "aer",
@@ -445,7 +445,7 @@ table_3
 
 
 Save table
-```{r}
+```{r include=FALSE}
 table_3 %>%
   stargazer(type="html",
             style = "aer",
@@ -499,7 +499,7 @@ table_4
 ```
 
 
-```{r }
+```{r include=FALSE}
 table_4 %>%
   stargazer(type="html",
             style = "aer",
@@ -527,7 +527,7 @@ table_5 <- clean %>%
 table_5
 ```
 
-```{r }
+```{r include=FALSE}
 table_5 %>%
   stargazer(type="html",
             style = "aer",
@@ -540,7 +540,7 @@ table_5 %>%
 
 ### Table 6: Discriptive statistics of variables 
 
-```{r }
+```{r include=FALSE}
 analysis %>%
   as.data.frame() %>%
   stargazer(type="html",
@@ -561,7 +561,7 @@ ind.var.names <- c("Intercept", "PTA", "GIM", "Oligopoly",
 ```
 
 
-```{r }
+```{r include=FALSE}
 stargazer(model_1, model_2, model_3,
           type = "html",
           style = "aer",
@@ -579,7 +579,7 @@ stargazer(model_1, model_2, model_3,
 
 ### Table 8: Methods comparison 
 
-```{r }
+```{r include=FALSE}
 stargazer(PTA, GIM, SFA,
           type = "html",
           style = "aer",
@@ -631,7 +631,7 @@ ggsave(filename = "Plots/4. Observarion number plot.png",
 
 ### Tables PP and PSE
 
-```{r}
+```{r include=FALSE}
 model_1 <- lm(log(index) ~ app_PTA + app_GIM +
                 type_Oligopoly +
                 obs_n + 
@@ -688,7 +688,7 @@ model_6 <- lm(log(index) ~ app_PTA + app_GIM +
 se_6 <- get_robust_se(model_6)
 ```
 
-```{r }
+```{r include=FALSE}
 stargazer(model_1, model_2, model_3, model_4, model_5, model_6,
           type = "html",
           style = "aer",
@@ -706,7 +706,7 @@ stargazer(model_1, model_2, model_3, model_4, model_5, model_6,
 
 ### tables small farm and perish
 
-```{r}
+```{r include=FALSE}
 model_1 <- lm(log(index) ~ app_PTA + app_GIM +
                 type_Oligopoly +
                 obs_n + 
@@ -735,7 +735,7 @@ model_3 <- lm(log(index) ~ app_PTA + app_GIM +
 se_3 <- get_robust_se(model_3)
 ```
 
-```{r}
+```{r include=FALSE}
 stargazer(model_1, model_2, model_3,
           type = "html",
           style = "aer",
@@ -755,7 +755,7 @@ stargazer(model_1, model_2, model_3,
 
 ### tables doing business
 
-```{r}
+```{r include=FALSE}
 model_1 <- lm(log(index) ~ app_PTA + app_GIM +
                 type_Oligopoly +
                 obs_n + 
@@ -786,7 +786,7 @@ se_3 <- get_robust_se(model_3)
 ```
 
 
-```{r}
+```{r include=FALSE}
 stargazer(model_1, model_2, model_3,
           type = "html",
           style = "aer",
