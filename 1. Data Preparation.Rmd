@@ -929,7 +929,7 @@ farms_full %>% glimpse()
 ```
 
 
-We need to transform industry to match the main dataset
+We need to categorise industry to match the main dataset
 ```{r}
 farms_full %>% 
   distinct(industry) 
@@ -940,30 +940,107 @@ farms_full %>%
 
 remove "(calculated with Standard Output)"
 ```{r}
-farms_full <-  farms_full %>% 
+farms_full <- farms_full %>% 
   mutate(industry = str_remove(industry, pattern = " \\(.+\\)")) 
 ```
 
+#### classify industry
 Try to classify with the function we already created
+```{r}
+farms_ind_rename <- farms_full %>% 
+  select(industry) %>% 
+  distinct() %>%
+  mutate(new_value = map_chr(industry, ~ classify_industry(.x))) %>% 
+  select(old_value = industry, new_value)
+
+farms_ind_rename
+```
+Classified satisfactory
+
+
+It will not be very efficient to categories each of 28k values.
+Lets write function which will map predefined value pairs 
+
+```{r}
+
+change_string_value <- function(target_value, old_values, new_values) {
+  
+  
+  result <- NULL
+  
+  for (i in 1:length(old_values) ) {
+    
+    if (target_value == old_values[i]) {
+      
+      result <- new_values[i]
+      
+      break }
+    
+  }
+  
+  # if result is still NULL throw an error
+  if ( is.null(result) ) stop("No matches, check old_values")
+  
+  return(result)
+}
+
+```
+
+
+check function
 ```{r}
 farms_full %>% 
   select(industry) %>% 
-  distinct() %>%
-  mutate(industry_cat = map_chr(industry, ~ classify_industry(.x))) 
-
+  mutate(industry_cat = map_chr(farms_full$industry,
+                                ~ change_string_value(target_value = .x,
+                    old_values = farms_ind_rename$old_value,
+                    new_values = farms_ind_rename$new_value))) %>%
+  head(10)
 ```
+Work well
+
+
+
+
+
+
+
 
 classification function we created before works satisfactory
 
 
 ```{r}
-# A bit long to run
 farms_full <- farms_full %>% 
-  mutate(industry_cat = map_chr(industry, ~ classify_industry(.x))) %>% 
+  mutate(industry_cat = map_chr(farms_full$industry,
+                                ~ change_string_value(target_value = .x,
+                    old_values = farms_ind_rename$old_value,
+                    new_values = farms_ind_rename$new_value))) %>% 
   select(-industry)
 ```
 
-change column position
+
+
+#### standardize country name
+```{r}
+farm_country_rename <- farms_full %>% 
+  select(old_country = country) %>% 
+  distinct() %>% 
+  mutate(new_country = map_chr(old_country, ~ standatise_country_name(.x)))
+
+head(farm_country_rename)
+```
+
+```{r}
+farms_full <- farms_full %>% 
+  mutate(country = map_chr(country,
+                                ~ change_string_value(target_value = .x,
+                                old_values = farm_country_rename$old_country,
+                                new_values = farm_country_rename$new_country)))
+```
+
+
+
+#### change column position
 ```{r}
 farms_full <- farms_full %>% 
   select(country, industry_cat, year, everything())
@@ -972,7 +1049,7 @@ farms_full <- farms_full %>%
 
 
 
-
+### prepare for joining
 ```{r}
 farms_full_to_join <- farms_full %>%
   pivot_wider(names_from = agrarea, 
@@ -991,8 +1068,7 @@ farms_full_to_join <- farms_full %>%
                names_to = "year",
                values_to = "sfarm_share") %>% 
   mutate(year = as.numeric(year)) %>% 
-  filter(!is.na(sfarm_share)) %>% 
-  mutate(country = map_chr(country, ~ standatise_country_name(.x)))
+  filter(!is.na(sfarm_share))
 
 head(farms_full_to_join)
 ```
@@ -1006,6 +1082,7 @@ ggplot(farms_full_to_join, aes(sfarm_share) ) +
 
 ```
 
+I didn`t keep full list of industry categories so I will create it once again
 ```{r}
 clean$industry_cat <- map_chr(clean$industry, ~ classify_industry(.x))
 ```
@@ -1020,7 +1097,7 @@ country_ind_year <-  country_year %>%
 head(country_ind_year)
 ```
 
-
+### 
 ```{r}
 sfarm_by_cat <-country_ind_year %>%
   left_join(farms_full_to_join, 
@@ -1034,11 +1111,16 @@ sfarm_by_cat <-country_ind_year %>%
 head(sfarm_by_cat)
 ```
 
-Finally join to main data set 
+### Finally join to main data set 
 
 ```{r}
 clean <- clean %>% 
   inner_join(sfarm_by_cat, by = "id", copy = TRUE)
+```
+
+
+```{r}
+sum(is.na(clean$sfarm_share_by_cat))
 ```
 
 
