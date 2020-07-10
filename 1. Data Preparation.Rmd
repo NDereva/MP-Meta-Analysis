@@ -892,7 +892,7 @@ ggplot(clean, aes(sfarm_share, mp_index, color=approach)) +
   theme_minimal()
 ```
 
-## The same data but categorised by industry
+## The same data but aggregated by industry
 
 
 
@@ -1124,6 +1124,13 @@ sum(is.na(clean$sfarm_share_by_cat))
 ```
 
 
+```{r}
+ggplot(clean, aes(sfarm_share_by_cat, mp_index, color=approach)) +
+  geom_point(alpha = 0.4, size = 5) +
+  theme_minimal()
+```
+
+
 # Add data from Doing Buisiness
 
 
@@ -1209,6 +1216,11 @@ clean <- clean %>%
 ```
 
 
+```{r}
+ggplot(clean, aes(start_business, mp_index, color=approach)) +
+  geom_point(alpha = 0.4, size = 5) +
+  theme_minimal()
+```
 
 
 

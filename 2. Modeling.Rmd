@@ -54,7 +54,7 @@ glimpse(analysis)
 
 
 
-```{r}
+```{r warning=FALSE}
 analysis %>%
   summarise_all(funs(sum(is.na(.)))) %>%
   gather(column, n_na)
@@ -203,24 +203,6 @@ model_4 <- lm(log(index) ~ app_PTA + app_GIM +
 se_4 <- get_robust_se(model_4)
 ```
 
-#### Test for heteroscadasticity
-```{r}
-bptest(model_1)
-```
-
-```{r}
-bptest(model_2)
-```
-
-```{r}
-bptest(model_3)
-```
-
-```{r}
-bptest(model_4)
-```
-
-We can see that all 3 models exposed to the heteroscadasticity issue. 
 
 
 ## Summary tables
@@ -237,10 +219,10 @@ stargazer(model_1, model_2, model_3, model_4, tobit,
           )
 ```
 
-### F-test 
 
 
-Lets check if type there influence of industry on the MPI 
+
+### Lets check if type there influence of industry on the MPI 
 ```{r}
 industry <- matchCoefs(model_3, "ind") # extract all industry dummies
 F.test.ind <-  linearHypothesis(model_3, industry, white.adjust = "hc1")
@@ -336,6 +318,12 @@ head(clean$article_ref, 20)
 
 summary table of all articles used in analysis
 
+```{r include=FALSE}
+# specify tables outpur. 
+# either "text" or "html"
+output <- "text"
+```
+
 
 
 ```{r}
@@ -354,9 +342,9 @@ table_1 <- clean %>%
 head(table_1)
 ```
 
-```{r include=FALSE}
+```{r}
 table_1 %>%
-  stargazer(type="html",
+  stargazer(type = output,
             style = "aer",
             title = "List of studies used",
             summary = FALSE, rownames = FALSE,
@@ -381,13 +369,11 @@ table_2 <-  clean %>%
   mutate(prop = round(n / sum(n) * 100, 2) ) %>%
   select(country, n, prop, mean_mp) %>%
   adorn_totals("row")
-
-table_2
 ```
 
-```{r include=FALSE}
+```{r}
 table_2 %>%
-  stargazer(type="html",
+  stargazer(type = output,
             style = "aer",
             title = "Summary of MP observations by country",
             summary = FALSE, rownames = FALSE,
@@ -414,7 +400,8 @@ clean %>%
        caption = "Source: own representation",
        color = "Approach:") 
 ```
-```{r}
+
+```{r include=FALSE}
 ggsave(filename = "Plots/2. Country distribution plot.png",
        dpi = "print",
        height = 10, width = 15, units = "cm")
@@ -440,14 +427,13 @@ table_3 <- clean %>%
   select(industry_fct, n, prop, mean_mp) %>%
   adorn_totals("row")
 
-table_3
 ```
 
 
 Save table
-```{r include=FALSE}
+```{r}
 table_3 %>%
-  stargazer(type="html",
+  stargazer(type = output,
             style = "aer",
             title = "Summary of MP observations by sector",
             summary = FALSE, rownames = FALSE,
@@ -455,7 +441,8 @@ table_3 %>%
 ```
 
 
-Visualise the distribution
+Visualize the distribution
+
 ```{r}
 clean %>%
   ggplot(aes(x = fct_reorder(industry_fct, mp_index, median) %>%
@@ -472,7 +459,7 @@ clean %>%
        color = "Approach:") 
 ```
 Save plot 
-```{r}
+```{r include=FALSE}
 ggsave(filename = "Plots/3. Sector distribution plot.png",
        dpi = "print",
        height = 10, width = 15, units = "cm")
@@ -494,14 +481,12 @@ table_4 <- clean %>%
   mutate(prop = round(n / sum(n) * 100, 2)) %>%
   select(approach, n, prop, mean_mp) %>%
   adorn_totals("row")
-
-table_4
 ```
 
 
-```{r include=FALSE}
+```{r}
 table_4 %>%
-  stargazer(type="html",
+  stargazer(type = output,
             style = "aer",
             title = "Summary of MP observations by approach used",
             summary = FALSE, rownames = FALSE,
@@ -523,13 +508,11 @@ table_5 <- clean %>%
   select(data_freq, n, prop, mean_mp) %>%
   arrange(-n) %>%
   adorn_totals("row")
-
-table_5
 ```
 
-```{r include=FALSE}
+```{r}
 table_5 %>%
-  stargazer(type="html",
+  stargazer(type = output,
             style = "aer",
             title = "Summary of MP observations by frequency",
             summary = FALSE, rownames = FALSE,
@@ -540,10 +523,10 @@ table_5 %>%
 
 ### Table 6: Discriptive statistics of variables 
 
-```{r include=FALSE}
+```{r }
 analysis %>%
   as.data.frame() %>%
-  stargazer(type="html",
+  stargazer(type = output,
             style = "aer",
             align = TRUE, nobs = FALSE,
             out = "Tables/6. Descriprive stat.doc")
@@ -551,7 +534,7 @@ analysis %>%
 
 
 
-### Table 7: Regresiion table
+### Table 7: Regression table
 
 ```{r}
 ind.var.names <- c("Intercept", "PTA", "GIM", "Oligopoly",
@@ -561,9 +544,9 @@ ind.var.names <- c("Intercept", "PTA", "GIM", "Oligopoly",
 ```
 
 
-```{r include=FALSE}
+```{r}
 stargazer(model_1, model_2, model_3,
-          type = "html",
+          type = output,
           style = "aer",
           #omit.stat=c("f", "ser", "n"), 
           title = "Regression Results",
@@ -579,9 +562,9 @@ stargazer(model_1, model_2, model_3,
 
 ### Table 8: Methods comparison 
 
-```{r include=FALSE}
+```{r}
 stargazer(PTA, GIM, SFA,
-          type = "html",
+          type = output,
           style = "aer",
           #omit.stat=c("f", "ser", "n"), 
           title = "Methods Comparison",
@@ -593,15 +576,6 @@ stargazer(PTA, GIM, SFA,
           intercept.bottom = FALSE,
           out = "Tables/8. Method Comparison.doc"
           )
-```
-
-### Table 9: F tests industry
-
-```{r include=FALSE}
-stargazer(F.test.ind,
-          type = "html",
-          style = "aer",
-          out = "Tables/9. F test industry.doc")
 ```
 
 
@@ -619,7 +593,7 @@ clean %>%
   easy_add_legend_title("Approach used:")
 ```
 
-```{r}
+```{r include=FALSE}
 ggsave(filename = "Plots/4. Observarion number plot.png",
        dpi = "print",
        height = 10, width = 15, units = "cm")
@@ -688,9 +662,9 @@ model_6 <- lm(log(index) ~ app_PTA + app_GIM +
 se_6 <- get_robust_se(model_6)
 ```
 
-```{r include=FALSE}
+```{r }
 stargazer(model_1, model_2, model_3, model_4, model_5, model_6,
-          type = "html",
+          type = output,
           style = "aer",
           #title = "Regressions Results",
           keep.stat=c("n", "rsq", "adj.rsq"), 
@@ -712,7 +686,7 @@ model_1 <- lm(log(index) ~ app_PTA + app_GIM +
                 obs_n + 
                 count_n_america +
                 ind_dairy + ind_meat + ind_beverages + ind_cereals + ind_oils +
-                log(mean_pse), 
+                log(mean_pse) + perish, 
          data=analysis)
 se_1 <- get_robust_se(model_1)
 
@@ -730,14 +704,23 @@ model_3 <- lm(log(index) ~ app_PTA + app_GIM +
                 obs_n + 
                 count_n_america +
                 ind_dairy + ind_meat + ind_beverages + ind_cereals + ind_oils +
-                log(sfarm_share) + log(mean_pse), 
+                log(sfarm_share), 
          data=analysis)
 se_3 <- get_robust_se(model_3)
+
+model_4 <- lm(log(index) ~ app_PTA + app_GIM +
+                type_Oligopoly +
+                obs_n + 
+                count_n_america +
+                ind_dairy + ind_meat + ind_beverages + ind_cereals + ind_oils +
+                log(sfarm_share_by_cat), 
+         data=analysis)
+se_4 <- get_robust_se(model_4)
 ```
 
-```{r include=FALSE}
-stargazer(model_1, model_2, model_3,
-          type = "html",
+```{r}
+stargazer(model_1, model_2, model_3, model_4,
+          type = output,
           style = "aer",
           #title = "Regressions Results",
           keep.stat=c("n", "rsq", "adj.rsq"), 
@@ -786,9 +769,9 @@ se_3 <- get_robust_se(model_3)
 ```
 
 
-```{r include=FALSE}
+```{r}
 stargazer(model_1, model_2, model_3,
-          type = "html",
+          type = output,
           style = "aer",
           #title = "Regressions Results",
           keep.stat=c("n", "rsq", "adj.rsq"), 
