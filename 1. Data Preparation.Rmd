@@ -1131,7 +1131,7 @@ ggplot(clean, aes(sfarm_share_by_cat, mp_index, color=approach)) +
 ```
 
 
-# Add data from Doing Buisiness
+## Add data from Doing Buisiness "easines to start business"
 
 
 
@@ -1222,9 +1222,75 @@ ggplot(clean, aes(start_business, mp_index, color=approach)) +
   theme_minimal()
 ```
 
+## Ease of doing business index 
+
+The algorithm is the same as with previous variable
+
+```{r}
+db <- readxl::read_excel(path = here("data", "raw data", "Doing Business.xlsx"),
+                         sheet = 1, skip = 3)
+```
 
 
-### Make an object only with columns we need for the further analysis 
+```{r}
+db <- db %>%
+  clean_names() %>% 
+  select(country_code, year = db_year,
+         starts_with("ease_of_doing_business_score")) %>% 
+  group_by(country_code, year) %>% 
+  # make one column with ease of doing business index
+  # assume that there is no difference in methodologies
+  mutate(edb_index = sum(ease_of_doing_business_score_db17_20_methodology,
+                          ease_of_doing_business_score_db15_methodology,
+                          ease_of_doing_business_score_db10_14_methodology,
+                          na.rm = TRUE),
+         country = standatise_country_name(country_code,
+                                           initial_code_scheme = "genc3c")) %>%
+  ungroup() %>% 
+  select(country, year, edb_index) %>%
+  # because on NAs some values are == 0
+  # filter them out
+  filter(edb_index > 0) %>% 
+  # assume that there is no big difference in doing business in 2010 and 2005
+  pivot_wider(names_from = year, 
+            values_from = edb_index) %>% 
+  mutate(`2005` = `2010`) %>% 
+  pivot_longer(cols = -country,
+             names_to = "year",
+             values_to = "edb_index") %>% 
+  mutate(year = as.numeric(year))
+
+head(db)
+```
+
+
+
+```{r}
+edb_join <- country_year %>%
+  left_join(db, 
+            by = c("country", "year"),
+            copy = TRUE) %>% 
+  # calculate an average DB index attributed to each MPI observation
+  group_by(id) %>% 
+  summarise(edb_index = mean(edb_index, na.rm=TRUE)) %>% 
+  ungroup()
+
+```
+
+
+```{r}
+clean <- clean %>% 
+  inner_join(edb_join, by = "id", copy = TRUE)
+```
+
+
+```{r}
+ggplot(clean, aes(edb_index, mp_index, color=approach)) +
+  geom_point(alpha = 0.4, size = 5) +
+  theme_minimal()
+```
+
+## Make an object only with columns we need for the further analysis 
 
 ```{r}
 drop_col <- c("id", "year", "authors", "title", "country", "industry", "period",
