@@ -26,7 +26,7 @@ set.seed(42)
 
 
 ```{r}
-data <- read_csv(here("data", "raw data", "Market Power Articles - Sheet2.csv"))
+data <- read_csv(here("data", "raw data", "Market Power Articles - Sheet2 V2.csv"))
 ```
 
 Lets clean the table a bit
@@ -39,7 +39,9 @@ clean <- data %>%
   rename(mp_type = type_of_mp,            # Shorten colnames
          mp_index = market_power_index,
          industry = industry_market,
-         data_freq = data_frequency)
+         data_freq = data_frequency) %>% 
+  mutate(mp_index = as.numeric(mp_index))
+  
 
 glimpse(clean)
 ```
@@ -204,8 +206,9 @@ classify_industry <- function(non_classified_str) {
   
   dairy <- c("milk", "dairy", "cheese", "butter")
   meat <- c("meat", "pork", "beef", "hog", "poultry", "livestock", "cattle",
-            "paultry", "pig")
-  cereals <- c("wheat", "oat", "triticale", "grain", "cereal", "barley")
+            "paultry", "pig", "slaughtering")
+  cereals <- c("wheat", "oat", "triticale", "grain", "cereal", "barley", "rice",
+               "milling")
   oils <- c("canola", "oil", "fat")
   beverages <- c("tea", "beer", "water", "brew", "coffee", "liquor", "drink",
                  "spirit", "wine", "brandy", "cocoa", "beverage")
@@ -239,6 +242,8 @@ clean %>%
   mutate(classified = map_chr(industry, classify_industry)) %>% 
   select(industry, classified)
 ```
+
+
 
 ```{r}
 clean <- clean %>% 
@@ -278,13 +283,15 @@ clean %>%
 
 ```{r}
 clean %>%
-  ggplot(aes(x = fct_reorder(industry_fct, mp_index, median),
+  ggplot(aes(x = fct_reorder(industry_fct, mp_index, length),
              y = mp_index,
              color = approach)) + 
   geom_jitter(width = 0.25, height = 0, alpha = 0.6, size = 2) +
   labs(x = "Industry", y="Market Power Index") +
   theme_minimal()
 ```
+
+
 Seems that there is an outlier in cereals
 
 ### Clean country column 
@@ -494,6 +501,18 @@ clean %>%
   filter(perish == 1)
 ```
 Seems correct
+
+
+```{r}
+clean %>%
+  ggplot(aes(x = as_factor(perish),
+             y = mp_index,
+             color = approach)) + 
+  geom_jitter(width = 0.25, height = 0, alpha = 0.6, size = 2) +
+  labs(x = "Perishable", y="Market Power Index") +
+  theme_minimal()
+```
+
 
 
 ## Load data related to Agricultural support (PSE) and Producer protection
@@ -764,7 +783,7 @@ clean <- clean %>%
 
 
 ```{r}
-ggplot(clean, aes(mean_pp, mp_index, color=approach)) +
+ggplot(clean, aes(log(mean_pp), mp_index, color=approach)) +
   geom_point(alpha = 0.7, size = 5, shape = 1) +
   theme_minimal()
 ```

@@ -38,7 +38,8 @@ Thus, I will drop them
 
 ```{r}
 analysis <- analysis_full %>%
-  filter(between(index, 0.005, 0.52))
+  filter(between(index, 0.005, 1),
+         mean_pp < 2)
 ```
 
 
@@ -65,16 +66,17 @@ analysis %>%
 
 ```{r}
 log_lm <- lm(log(index) ~ app_PTA + app_GIM +
-                 obs_n + 
-                 freq_Yearly +
-                 count_n_america +
-                 after_2005 +
-                 type_Oligopsony +
-                 ind_dairy + ind_meat + ind_cereals + ind_beverages + ind_oils +
-                 #perish +
-                 #start_business +
-                 log(mean_pp) + log(mean_pse), 
-         data=analysis, subset = mean_pp < 2)
+               obs_n + I(obs_n^2) +
+               freq_Yearly + freq_Monthly +
+               count_n_america + count_europe +
+               after_2005 +
+               type_Oligopsony +
+               ind_meat + ind_tobacco + ind_beverages + ind_dairy + ind_oils +
+               ind_fruits + ind_cereals +
+               perish +
+               log(mean_pse) + log(mean_pp)
+                 , 
+         data = analysis)
 
 summary(log_lm)
 ```
