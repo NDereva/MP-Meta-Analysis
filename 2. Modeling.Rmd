@@ -388,7 +388,7 @@ Visualize the distribution
 clean %>%
     mutate(country = as_factor(country) %>%
            fct_infreq() %>%
-           fct_lump_min(min = 4) 
+           fct_lump_min(min = 10) 
          ) %>%
   ggplot(aes(x = country,
              y = mp_index,
