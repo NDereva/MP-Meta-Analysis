@@ -38,8 +38,7 @@ Thus, I will drop them
 
 ```{r}
 analysis <- analysis_full %>%
-  filter(between(index, 0.005, 1),
-         mean_pp < 2)
+  filter(between(index, 0.005, 1))
 ```
 
 
@@ -57,7 +56,7 @@ glimpse(analysis)
 
 ```{r warning=FALSE}
 analysis %>%
-  summarise_all(funs(sum(is.na(.)))) %>%
+  summarise_all(~ sum(is.na(.x))) %>%
   gather(column, n_na)
 ```
 
@@ -66,15 +65,16 @@ analysis %>%
 
 ```{r}
 log_lm <- lm(log(index) ~ app_PTA + app_GIM +
-               obs_n + I(obs_n^2) +
-               freq_Yearly + freq_Monthly +
+               #obs_n + I(obs_n^2) +
+               log(obs_n) +
+               freq_Yearly +
                count_n_america + count_europe +
                after_2005 +
                type_Oligopsony +
                ind_meat + ind_tobacco + ind_beverages + ind_dairy + ind_oils +
                ind_fruits + ind_cereals +
                perish +
-               log(mean_pse) + log(mean_pp)
+               log(mean_pse) #+ log(mean_pp)
                  , 
          data = analysis)
 
@@ -111,16 +111,18 @@ stargazer(log_lm, log_lm, se=list(NULL, log_lm_se),
 #### Without Log transformation
 ```{r}
 lm <- lm(index ~ app_PTA + app_GIM +
-                 obs_n + 
-                 freq_Yearly +
-                 count_n_america +
-                 after_2005 +
-                 type_Oligopsony +
-                 ind_dairy + ind_meat + ind_cereals + ind_beverages + ind_oils +
-                 #perish +
-                 #start_business +
-                 log(mean_pp) + log(mean_pse), 
-         data=analysis)
+               #obs_n + I(obs_n^2) + I(obs_n^3) +
+               log(obs_n) +
+               freq_Yearly +
+               count_n_america + count_europe +
+               after_2005 +
+               type_Oligopsony +
+               ind_meat + ind_tobacco + ind_beverages + ind_dairy + ind_oils +
+               ind_fruits + ind_cereals +
+               perish +
+               log(mean_pse) #+ log(mean_pp)
+                 , 
+         data = analysis)
 
 summary(lm)
 ```
@@ -154,15 +156,17 @@ library(censReg)
 
 ```{r}
 tobit <- censReg(index ~ app_PTA + app_GIM +
-                 obs_n + 
-                 freq_Yearly +
-                 type_Oligopoly +
-                 count_n_america +
-                 after_2005 +
-                 ind_dairy + ind_meat + ind_cereals + ind_beverages + ind_oils +
-                 #perish +
-                 #start_business +
-                 log(mean_pp) + log(mean_pse),
+               #obs_n + I(obs_n^2) + I(obs_n^3) +
+               log(obs_n) +
+               freq_Yearly +
+               count_n_america + count_europe +
+               after_2005 +
+               type_Oligopsony +
+               ind_meat + ind_tobacco + ind_beverages + ind_dairy + ind_oils +
+               ind_fruits + ind_cereals +
+               perish +
+               log(mean_pse) #+ log(mean_pp)
+                 ,
                  data = analysis_full)
 
 summary(tobit)
@@ -219,6 +223,52 @@ stargazer(model_1, model_2, model_3, model_4, tobit,
           align = TRUE,
           intercept.bottom = FALSE
           )
+```
+
+
+
+```{r}
+model_1 <- lm(log(index) ~ app_PTA + app_GIM +
+               log(obs_n) +
+               freq_Yearly +
+               count_n_america + count_europe +
+               after_2005 +
+               type_Oligopsony +
+               ind_meat + ind_tobacco + ind_beverages + ind_dairy + ind_oils +
+               ind_fruits + ind_cereals +
+               perish +
+               log(mean_pse)
+                 , 
+               data=analysis)
+se_1 <- get_robust_se(model_1)
+
+model_2 <- lm(log(index) ~ app_PTA + app_GIM +
+               obs_n + I(obs_n^2) +
+               freq_Yearly +
+               count_n_america + count_europe +
+               after_2005 +
+               type_Oligopsony +
+               ind_meat + ind_tobacco + ind_beverages + ind_dairy + ind_oils +
+               ind_fruits + ind_cereals +
+               perish +
+               log(mean_pse)
+                 , 
+         data=analysis)
+se_2 <- get_robust_se(model_2)
+
+
+
+stargazer(model_1, model_2,
+          type = "text",
+          keep.stat=c("n", "rsq", "adj.rsq"), 
+          title = "Analysis Results",
+          #column.labels =  c("Model 1", "Model 2", "Model 3"),
+          dep.var.labels = "Market Power Index (log transformed)",
+          se = list(se_1, se_2),
+          align = TRUE,
+          intercept.bottom = FALSE
+          )
+
 ```
 
 

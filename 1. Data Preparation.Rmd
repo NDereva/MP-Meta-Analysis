@@ -46,6 +46,14 @@ clean <- data %>%
 glimpse(clean)
 ```
 
+```{r}
+clean %>% 
+  summarise_all(~ sum(is.na(.x))) %>% 
+  gather("column", "n.na")
+  
+```
+
+
 #### Clean and convert approach column
 
 ```{r}
@@ -245,6 +253,7 @@ clean %>%
 
 
 
+
 ```{r}
 clean <- clean %>% 
   mutate(industry_fct = map_chr(industry, classify_industry))
@@ -269,7 +278,8 @@ and keep only groups with more then 10 observations
 ```{r}
 clean <- clean %>%
   mutate(industry_fct = as_factor(industry_fct)) %>%
-  mutate(industry_fct = fct_lump_min(industry_fct, min = 10, other_level = "other"))
+  mutate(industry_fct = fct_lump_min(industry_fct, min = 10,
+                                     other_level = "other"))
 ```
 
 ```{r}
@@ -413,17 +423,11 @@ clean %>%
 ```
 Seems correct 
 
-check for missing data
-```{r}
-sum(is.na(clean$n_of_obs))
-
-```
 
 
 
 ```{r}
 clean %>%
-  filter(!is.na(n_of_obs)) %>%
   ggplot(aes(x=n_of_obs, y=mp_index, color = approach)) +
   geom_point(size = 3, alpha = 0.4) +
   scale_x_continuous(trans = "log10") +
@@ -478,16 +482,17 @@ clean <- clean %>%
                                       c("beef", "pork", "meat", "milk",
                                         "paultry", "cheese", "bakery",
                                         "poultry", "egg", "fish",
-                                        "salmon", "hog", "ice", "dairy",
-                                        "cake", "cattle"))) ~ 1,
+                                        "salmon", "hog", "dairy",
+                                        "cake", "cattle", "livestock",
+                                        "fruit"))) ~ 1,
                         
                                         TRUE ~ 0) )  %>%
-  # set 0 to non perishable goods which mistakenly was missclassified
+  # set 0 to non perishable goods which mistakenly was misclassified
   mutate(perish = case_when(
                         map_lgl(industry, ~ contains_value(.x,
                         # this chunk fix the bug that cond. milk and rise were
                         # classified as perishables
-                                        c("cond", "rice"))) ~ 0,
+                                        c("cond", "rice", "frozen"))) ~ 0,
                                         TRUE ~ perish) )
 ```
 
@@ -498,7 +503,7 @@ check results
 ```{r}
 clean %>% 
   select(industry, perish) %>% 
-  filter(perish == 1)
+  filter(perish != 1)
 ```
 Seems correct
 
@@ -545,10 +550,8 @@ Filter for PSE values in % of gross farm receipts
 support <- support %>% 
   filter(subject == "PSE", measure == "PC_GFARM") 
 
-nrow(support)
 ```
 
-Data shrieked significantly
 
 From the data we need only 3 columns:
 Location, year and value 
@@ -572,7 +575,8 @@ Seems that OECD uses one of beforewritten country codes
 lets convert it to the regular English country names
 
 ```{r}
-support$country <- map_chr(support$location, ~ standatise_country_name(.x, "genc3c"))
+support$country <- map_chr(support$location,
+                           ~ standatise_country_name(.x, "genc3c"))
 ```
 
 
@@ -673,7 +677,7 @@ head(mean_pse)
 mean(is.na(mean_pse$mean_pse))
 
 ```
-Unfortunately we 4.5% of observations is missing
+Unfortunately around 2.% of observations is missing
 Probably this is because many articles use too old data for the MPI estimation
 While PSE index data is available starting from 1986,
 
@@ -699,11 +703,19 @@ ggplot(clean, aes(mean_pse, mp_index, color=approach)) +
 Check observations with negative PSE
 ```{r}
 clean %>% 
-  filter(!is.na(mean_pse), mean_pse < 0) %>% 
+  filter( mean_pse < 0) %>% 
   select(country, id, mean_pse) %>% 
   mutate(log_mean_pse = log(mean_pse))
 ```
 Ukraine ¯\_(ツ)_/¯
+
+Countries with high PSE
+```{r}
+clean %>% 
+  filter(mean_pse > 60) %>% 
+  select(id, country, mean_pse)
+```
+
 
 
 ### Adding Producer Protection (PP) index to our data
@@ -748,7 +760,6 @@ PP %>%
 ```{r}
 PP <- PP %>% 
   select(country, year, PP)
-
 ```
 
 
@@ -761,7 +772,7 @@ mean_pp <- country_year %>%
   left_join(PP, 
             by = c("country", "year"),
             copy = TRUE) %>% 
-  # calculate an average PSE index attributed to each MPI observation
+  # calculate an average PP index attributed to each MPI observation
   group_by(id) %>% 
   summarise(mean_pp = mean(PP, na.rm=TRUE)) %>% 
   ungroup()
@@ -769,10 +780,6 @@ mean_pp <- country_year %>%
 head(mean_pp)
 ```
 
-```{r}
-mean(is.na(mean_pp))
-```
-Luckily there is only 2.2% of missing values in mean PP indicator
 
 ```{r}
 clean <- clean %>% 
@@ -780,13 +787,13 @@ clean <- clean %>%
 ```
 
 
-
-
 ```{r}
-ggplot(clean, aes(log(mean_pp), mp_index, color=approach)) +
+ggplot(clean, aes(mean_pp, mp_index, color=approach)) +
   geom_point(alpha = 0.7, size = 5, shape = 1) +
   theme_minimal()
 ```
+
+
 Maybe I should not use those 4 outliers in the analysis
 
 
@@ -894,7 +901,7 @@ head(sfarm)
 ```{r}
 sum(is.na(sfarm))
 ```
-A lot of missing observations
+A lot of missing observations :(
 
 
 ```{r}
@@ -977,7 +984,7 @@ farms_ind_rename
 Classified satisfactory
 
 
-It will not be very efficient to categories each of 28k values.
+It will not be very efficient to categorize each of 28k values.
 Lets write function which will map predefined value pairs 
 
 ```{r}
@@ -1014,15 +1021,10 @@ farms_full %>%
                                 ~ change_string_value(target_value = .x,
                     old_values = farms_ind_rename$old_value,
                     new_values = farms_ind_rename$new_value))) %>%
+  distinct() %>% 
   head(10)
 ```
 Work well
-
-
-
-
-
-
 
 
 classification function we created before works satisfactory
@@ -1122,7 +1124,7 @@ sfarm_by_cat <-country_ind_year %>%
   left_join(farms_full_to_join, 
             by = c("country", "industry_cat", "year"),
             copy = TRUE) %>% 
-  # calculate an average PSE index attributed to each MPI observation
+  # calculate an average SfarmShare index attributed to each MPI observation
   group_by(id) %>% 
   summarise(sfarm_share_by_cat = mean(sfarm_share, na.rm=TRUE)) %>% 
   ungroup()
@@ -1196,11 +1198,9 @@ guess_field(db$country_code)
 ```
 
 ```{r}
-db$country <- countrycode(sourcevar = db$country_code,
-                    origin = "genc3c",
-                    destination = "country.name",
-                    warn = TRUE,
-                    nomatch = NULL)
+db$country <- standatise_country_name(db$country_code,
+                                      initial_code_scheme = "genc3c")
+
 ```
 
 
