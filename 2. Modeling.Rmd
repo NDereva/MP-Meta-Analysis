@@ -18,6 +18,11 @@ library(sandwich)
 library(stargazer)
 library(car)
 
+
+# specify tables outpur. 
+# either "text" or "html"
+output <- "text"
+
 set.seed(42)
 ```
 
@@ -72,14 +77,21 @@ log_lm <- lm(log(index) ~ app_PTA + app_GIM +
                after_2005 +
                type_Oligopsony +
                ind_meat + ind_tobacco + ind_beverages + ind_dairy + ind_oils +
-               ind_fruits + ind_cereals +
-               perish +
-               log(mean_pse) #+ log(mean_pp)
+               ind_fruits + ind_cereals 
+               #perish +
+               #log(mean_pse) + log(mean_pp)
                  , 
          data = analysis)
 
 summary(log_lm)
 ```
+
+```{r}
+analysis %>%
+  select(starts_with("ind_"), perish) %>% 
+  cor()
+```
+
 
 ```{r}
 bptest(log_lm)
@@ -120,8 +132,8 @@ lm <- lm(index ~ app_PTA + app_GIM +
                ind_meat + ind_tobacco + ind_beverages + ind_dairy + ind_oils +
                ind_fruits + ind_cereals +
                perish +
-               log(mean_pse) #+ log(mean_pp)
-                 , 
+               log(mean_pse) + log(mean_pp)
+                 ,
          data = analysis)
 
 summary(lm)
@@ -370,12 +382,6 @@ head(clean$article_ref, 20)
 
 summary table of all articles used in analysis
 
-```{r include=FALSE}
-# specify tables outpur. 
-# either "text" or "html"
-output <- "text"
-```
-
 
 
 ```{r}
@@ -588,21 +594,46 @@ analysis %>%
 
 ### Table 7: Regression table
 
-```{r}
-ind.var.names <- c("Intercept", "PTA", "GIM", "Oligopoly",
-                   "Observations Num.", "After 2005", "Yearly",
-                   "Quarterly", "USA", "Europe", "Dairy", "Meat",
-                   "Beverages", "Cereals", "Oils")
-```
+
 
 
 ```{r}
+model_1 <- lm(log(index) ~ app_PTA + app_GIM +
+               after_2005 + type_Oligopsony, 
+         data = analysis)
+se_1 <- get_robust_se(model_1)
+
+model_2 <- lm(log(index) ~ app_PTA + app_GIM +
+               after_2005 + type_Oligopsony +
+               log(obs_n) +
+               freq_Yearly +
+               count_n_america + count_europe, 
+         data = analysis)
+se_2 <- get_robust_se(model_2)
+
+
+model_3 <- lm(log(index) ~ app_PTA + app_GIM +
+               after_2005 + type_Oligopsony +
+               log(obs_n) +
+               freq_Yearly +
+               count_n_america + count_europe +
+               ind_meat + ind_tobacco + ind_beverages + ind_dairy + ind_oils +
+               ind_fruits + ind_cereals, 
+         data = analysis)
+
+se_3 <- get_robust_se(model_3)
+
+ind.var.names <- c("Intercept", "PTA", "GIM", "After 2005", "Oligopsony",
+                   "Obs. Num. (log)", "Yearly", "USA", "Europe",
+                   "Meat", "Tobacco", "Beverages", "Dairy", "Oils", "Fruits",
+                   "Cereals")
+
 stargazer(model_1, model_2, model_3,
           type = output,
-          style = "aer",
-          #omit.stat=c("f", "ser", "n"), 
+          style = "io",
+          omit.stat=c("rsq"), 
           title = "Regression Results",
-          dep.var.labels = "Market Power Index (log transformed)",
+          dep.var.labels = "Market Power Index (log)",
           covariate.labels = ind.var.names,
           se = list(se_1, se_2, se_3),      #  Robust se
           align = TRUE,
@@ -611,6 +642,8 @@ stargazer(model_1, model_2, model_3,
           out = "Tables/7. Regression Table.doc"
           )
 ```
+
+
 
 ### Table 8: Methods comparison 
 

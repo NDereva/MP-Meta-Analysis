@@ -484,7 +484,7 @@ clean <- clean %>%
                                         "poultry", "egg", "fish",
                                         "salmon", "hog", "dairy",
                                         "cake", "cattle", "livestock",
-                                        "fruit"))) ~ 1,
+                                        "fruit", "slaughter"))) ~ 1,
                         
                                         TRUE ~ 0) )  %>%
   # set 0 to non perishable goods which mistakenly was misclassified
