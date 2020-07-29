@@ -75,11 +75,12 @@ log_lm <- lm(log(index) ~ app_PTA + app_GIM +
                freq_Yearly +
                count_n_america + count_europe +
                after_2005 +
-               type_Oligopsony +
+               type_Oligopsony + 
                ind_meat + ind_tobacco + ind_beverages + ind_dairy + ind_oils +
-               ind_fruits + ind_cereals 
-               #perish +
-               #log(mean_pse) + log(mean_pp)
+               ind_fruits + ind_cereals +
+               perish +
+               type_Oligopsony*log(mean_pse) +
+               log(mean_pse) 
                  , 
          data = analysis)
 
