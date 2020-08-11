@@ -1291,7 +1291,7 @@ edb_join <- country_year %>%
             copy = TRUE) %>% 
   # calculate an average DB index attributed to each MPI observation
   group_by(id) %>% 
-  summarise(edb_index = mean(edb_index, na.rm=TRUE)) %>% 
+  summarise(edb_index = mean(edb_index, na.rm = TRUE)) %>% 
   ungroup()
 
 ```
@@ -1304,10 +1304,34 @@ clean <- clean %>%
 
 
 ```{r}
-ggplot(clean, aes(edb_index, mp_index, color=approach)) +
+ggplot(clean, aes(edb_index, mp_index, color = approach)) +
   geom_point(alpha = 0.4, size = 5) +
   theme_minimal()
 ```
+## Column with articles weights for WLS
+
+Some articles have only one MPI while other multiple estimates
+to avoid excessive influence of articles with many MPIs we will use 
+Weighted Least squares 
+
+```{r}
+weights <- clean %>% 
+  group_by(title) %>% 
+  summarise(weights = 1 / n()) %>% 
+  ungroup()
+
+head(weights)
+```
+
+```{r}
+clean <- clean %>% 
+  inner_join(weights, by = "title")
+```
+
+
+
+
+
 
 ## Make an object only with columns we need for the further analysis 
 
