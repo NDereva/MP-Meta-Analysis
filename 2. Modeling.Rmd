@@ -18,8 +18,7 @@ library(sandwich)
 library(stargazer)
 library(car)
 
-
-# specify tables outpur. 
+# specify tables output. 
 # either "text" or "html"
 output <- "text"
 
@@ -43,7 +42,7 @@ Thus, I will drop them
 
 ```{r}
 analysis <- analysis_full %>%
-  filter(between(index, 0.005, 1))
+  filter(between(index, 0.005, 1))  
 ```
 
 
@@ -69,6 +68,7 @@ analysis %>%
 
 
 
+
 ```{r}
 log_lm <- lm(log(index) ~ app_PTA + app_GIM 
                #+ obs_n + I(obs_n^2) 
@@ -79,20 +79,19 @@ log_lm <- lm(log(index) ~ app_PTA + app_GIM
                + type_Oligopsony 
                + ind_meat + ind_tobacco + ind_beverages + ind_dairy + ind_oils 
                + ind_fruits + ind_cereals
-               #+ perish
+               + perish
+               #+ log(mean_pse)*type_Oligopsony
+               #+ log(mean_pp)
+               #+ log(mean_pse)*log(mean_pp)
+               #+ log(mean_pse)*count_n_america
+               #+ perish*count_n_america
                #+ perish*type_Oligopsony
-               #+ log(mean_pse) + log(mean_pp)
                  , 
          data = analysis)
 
 summary(log_lm)
 ```
 
-```{r}
-analysis %>%
-  select(starts_with("ind_"), perish) %>% 
-  cor()
-```
 
 
 ```{r}
@@ -110,11 +109,9 @@ Lets try to use heteroscadasticity robust se and to compare it with the regular
 ```{r}
 log_lm_se <- vcovHC(log_lm, type = "HC")
 log_lm_se <- sqrt(diag(log_lm_se))
-log_lm_se
-```
 
 
-```{r}
+
 stargazer(log_lm, log_lm, se = list(NULL, log_lm_se),
           column.labels = c("default SE", "robust SE"), type = "text",
           omit.stat = c("f", "ser", "n"), align = TRUE)
@@ -122,32 +119,6 @@ stargazer(log_lm, log_lm, se = list(NULL, log_lm_se),
 
 
 
-#### Without Log transformation
-```{r}
-lm <- lm(index ~ app_PTA + app_GIM +
-               #obs_n + I(obs_n^2) + I(obs_n^3) +
-               log(obs_n) +
-               freq_Yearly +
-               count_n_america + count_europe +
-               after_2005 +
-               type_Oligopsony +
-               ind_meat + ind_tobacco + ind_beverages + ind_dairy + ind_oils +
-               ind_fruits + ind_cereals +
-               perish +
-               log(mean_pse) + log(mean_pp)
-                 ,
-         data = analysis)
-
-summary(lm)
-```
-
-```{r}
-bptest(lm)
-```
-
-```{r}
-plot(lm)
-```
 
 ```{r}
 get_robust_se <- function(lm_model)  {
@@ -156,14 +127,51 @@ get_robust_se <- function(lm_model)  {
   return(robust_se)
 }
 
-get_robust_se(lm)
+```
+
+
+
+## Robust Linear Regression
+
+```{r}
+rlm <- MASS::rlm( formula(log_lm), 
+         data = analysis,
+         maxit = 100,
+         psi = "psi.bisquare") # give lowest RSS
+
+summary(rlm)
+```
+
+```{r}
+get_r2 <- function(model){  
+ SSe <- sum((model$resid)^2)
+ observed <- model$resid + model$fitted
+ SSt <- sum((observed - mean(observed))^2)
+ value <- 1 - SSe/SSt
+ return(value)
+}
+```
+
+```{r}
+get_r2(rlm)
+```
+
+
+
+```{r}
+log_lm_se <- get_robust_se(log_lm)
+rlm_se <- get_robust_se(rlm)
+
+stargazer(rlm, log_lm, se = list(rlm_se, log_lm_se),
+          type = "text",
+          align = TRUE)
 ```
 
 
 ## Weighted Least squares
 
 ```{r}
-wls <-  lm(log(index) ~ app_PTA + app_GIM 
+wls <-  lm((index) ~ app_PTA + app_GIM 
                #+ poly(obs_n, 2)
                + log(obs_n) 
                + freq_Yearly 
@@ -172,8 +180,8 @@ wls <-  lm(log(index) ~ app_PTA + app_GIM
                + type_Oligopsony 
                + ind_meat + ind_tobacco + ind_beverages + ind_dairy + ind_oils 
                + ind_fruits + ind_cereals
-               + perish
-               + log(mean_pse) + log(mean_pp)
+               #+ perish
+               #+ log(mean_pse) + log(mean_pp)
                  , 
          data = analysis,
          weights = weights)
@@ -200,7 +208,7 @@ model_1 <- lm(log(index) ~ app_PTA + app_GIM
          data = analysis)
 se_1 <- get_robust_se(model_1)
 
-model_2 <- lm(log(index) ~ app_PTA + app_GIM 
+model_2 <- lm((index) ~ app_PTA + app_GIM 
                + log(obs_n) 
                + freq_Yearly 
                + count_n_america + count_europe 
@@ -212,7 +220,7 @@ model_2 <- lm(log(index) ~ app_PTA + app_GIM
 se_2 <- get_robust_se(model_2)
 
 model_3 <- lm(log(index) ~ app_PTA + app_GIM 
-               + log(obs_n) 
+               + log(obs_n)
                + freq_Yearly 
                + count_n_america + count_europe 
                + after_2005 
@@ -220,12 +228,12 @@ model_3 <- lm(log(index) ~ app_PTA + app_GIM
                + ind_meat + ind_tobacco + ind_beverages + ind_dairy + ind_oils 
                + ind_fruits + ind_cereals
                + perish
-               + log(mean_pse) + log(mean_pp), 
-         data = analysis)
+               #+ log(mean_pse) + log(mean_pp)
+         ,data = analysis)
 se_3 <- get_robust_se(model_3)
 
 
-model_4 <- lm(log(index) ~ app_PTA + app_GIM 
+model_4 <- lm((index) ~ app_PTA + app_GIM 
                + log(obs_n) 
                + freq_Yearly 
                + count_n_america + count_europe 
@@ -234,20 +242,20 @@ model_4 <- lm(log(index) ~ app_PTA + app_GIM
                + ind_meat + ind_tobacco + ind_beverages + ind_dairy + ind_oils 
                + ind_fruits + ind_cereals
                + perish
-               + log(mean_pse) + log(mean_pp), 
-         data = analysis, weights = weights)
+               #+ log(mean_pse) + log(mean_pp)
+         ,data = analysis, weights = weights)
 se_4 <- get_robust_se(model_4)
 
-stargazer(model_1, model_2, model_3, model_4,
+stargazer(model_1, model_2, model_3, model_4, rlm,
           type = "text",
           keep.stat = c("n", "rsq", "adj.rsq"),
           title = "Analysis Results",
           column.labels =  c("OLS 1", "WLS 1", "OLS 2", "WLS 2"),
-          dep.var.labels = "Market Power Index (log transformed)",
+          #dep.var.labels = "Market Power Index (log transformed)",
           se = list(se_1, se_2, se_3, se_4),
           align = TRUE,
-          intercept.bottom = FALSE,
-          out = "Tables/WLS.doc"
+          intercept.bottom = FALSE
+          #,out = "Tables/WLS.doc"
           )
 ```
 
@@ -288,7 +296,7 @@ se_1 <- get_robust_se(model_1)
 
 model_2 <- lm(log(index) ~ app_PTA + app_GIM +
                 type_Oligopoly +
-                after_2005 +
+                after_2005 + log(obs_n) +
                 freq_Yearly +
                 count_n_america + count_europe, 
          data = analysis)
@@ -296,35 +304,48 @@ se_2 <- get_robust_se(model_2)
 
 model_3 <- lm(log(index) ~ app_PTA + app_GIM +
                 type_Oligopoly +
-                obs_n + after_2005 +
+                log(obs_n) + after_2005 +
                 freq_Yearly +
                 count_n_america + count_europe +
-                ind_dairy + ind_meat + ind_beverages + ind_cereals + ind_oils,
+                ind_meat + ind_tobacco + ind_beverages + ind_dairy + ind_oils +
+                ind_fruits + ind_cereals + perish,
          data = analysis)
 se_3 <- get_robust_se(model_3)
 
 
 model_4 <- lm(log(index) ~ app_PTA + app_GIM +
                 type_Oligopoly +
-                obs_n +
-                count_n_america +
-                ind_dairy + ind_meat + ind_beverages + ind_cereals + ind_oils +
+                log(obs_n) + after_2005 +
+                count_n_america + count_europe + freq_Yearly +
+                ind_meat + ind_tobacco + ind_beverages + ind_dairy + ind_oils +
+                ind_fruits + ind_cereals + perish +
                 log(mean_pp) + log(mean_pse),
          data = analysis)
 se_4 <- get_robust_se(model_4)
+
+model_5 <- lm(log(index) ~ app_PTA + app_GIM +
+                type_Oligopoly +
+                log(obs_n) + after_2005 +
+                count_n_america + count_europe + freq_Yearly +
+                ind_meat + ind_tobacco + ind_beverages + ind_dairy + ind_oils +
+                ind_fruits + ind_cereals + perish +
+                log(mean_pp) + log(mean_pse) + 
+                log(sfarm_share) + log(start_business),
+         data = analysis)
+se_5 <- get_robust_se(model_5)
 ```
 
 
 
 ## Summary tables
 ```{r}
-stargazer(model_1, model_2, model_3, model_4, tobit,
+stargazer(model_1, model_2, model_3, model_4, model_5,
           type = "text",
           keep.stat = c("n", "rsq", "adj.rsq"),
           title = "Analysis Results",
           #column.labels =  c("Model 1", "Model 2", "Model 3"),
           dep.var.labels = "Market Power Index (log transformed)",
-          se = list(se_1, se_2, se_3, se_4),
+          se = list(se_1, se_2, se_3, se_4, se_5),
           align = TRUE,
           intercept.bottom = FALSE
           )
@@ -510,7 +531,7 @@ table_1 %>%
 table_2 <-  clean %>%
   mutate(country = as_factor(country) %>%
            fct_infreq() %>%
-           fct_lump_min(min = 3) 
+           fct_lump_min(min = 10) 
          ) %>%
   group_by(country) %>%
   summarise(n = n(), 
@@ -713,22 +734,46 @@ model_3 <- lm(log(index) ~ app_PTA + app_GIM +
                ind_meat + ind_tobacco + ind_beverages + ind_dairy + ind_oils +
                ind_fruits + ind_cereals, 
          data = analysis)
-
 se_3 <- get_robust_se(model_3)
+
+model_4 <- lm(log(index) ~ app_PTA + app_GIM +
+                after_2005 + type_Oligopsony +
+                log(obs_n) +
+                freq_Yearly +
+                count_n_america + count_europe +
+                ind_meat + ind_tobacco + ind_beverages + ind_dairy + ind_oils +
+                ind_fruits + ind_cereals + perish +
+                log(mean_pp) + log(mean_pse),
+         data = analysis)
+se_4 <- get_robust_se(model_4)
+
+model_5 <- lm(log(index) ~ app_PTA + app_GIM +
+                after_2005 + type_Oligopsony +
+                log(obs_n) +
+                freq_Yearly +
+                count_n_america + 
+                ind_meat + ind_tobacco + ind_beverages + ind_dairy + ind_oils +
+                ind_fruits + ind_cereals + perish +
+                log(mean_pp) + log(mean_pse) +
+                log(sfarm_share) + log(start_business),
+         data = analysis)
+se_5 <- get_robust_se(model_5)
 
 ind.var.names <- c("Intercept", "PTA", "GIM", "After 2005", "Oligopsony",
                    "Obs. Num. (log)", "Yearly", "USA", "Europe",
                    "Meat", "Tobacco", "Beverages", "Dairy", "Oils", "Fruits",
-                   "Cereals")
+                   "Cereals", "Perishable", "PP (log)",
+                   "PSE (log)", "Small Farm Share (log)",
+                   "Start Business Ease (log)")
 
-stargazer(model_1, model_2, model_3,
+stargazer(model_1, model_2, model_3, model_4, model_5,
           type = output,
           style = "io",
           omit.stat = c("rsq"), 
           title = "Regression Results",
           dep.var.labels = "Market Power Index (log)",
           covariate.labels = ind.var.names,
-          se = list(se_1, se_2, se_3),      #  Robust se
+          se = list(se_1, se_2, se_3, se_4, se_5),      #  Robust se
           align = TRUE,
           df = FALSE,
           intercept.bottom = FALSE,
@@ -962,3 +1007,59 @@ stargazer(model_1, model_2, model_3,
           out = "Tables/11. DB.doc"
           )
 ```
+
+## Table conference Rajske Teplice
+```{r}
+model_1 <- lm(log(index) ~ app_PTA + app_GIM +
+               after_2005 + type_Oligopsony, 
+         data = analysis)
+se_1 <- get_robust_se(model_1)
+
+model_2 <- lm(update(formula(model_1), ~ . +
+                       log(obs_n) + freq_Yearly +
+                       count_n_america + count_europe),
+
+         data = analysis)
+se_2 <- get_robust_se(model_2)
+
+
+model_3 <- lm(update(formula(model_2), ~ . +
+               ind_meat + ind_tobacco + ind_beverages + ind_dairy + ind_oils +
+               ind_fruits + ind_cereals), 
+         data = analysis)
+se_3 <- get_robust_se(model_3)
+
+
+model_4 <- lm(update(formula(model_3), ~ . +
+                       perish),
+                       data = analysis)
+se_4 <- get_robust_se(model_4)
+
+model_5 <- MASS::rlm(formula(model_4),
+                     data = analysis,
+                     maxit = 100,
+                     psi = "psi.bisquare")
+se_5 <- get_robust_se(model_5)
+
+ind.var.names <- c("Intercept", "PTA", "GIM", "After 2005", "Oligopsony",
+                   "Obs. Num. (log)", "Yearly", "USA", "Europe",
+                   "Meat", "Tobacco", "Beverages", "Dairy", "Oils", "Fruits",
+                   "Cereals", "Perishable")
+
+stargazer(model_1, model_2, model_3, model_4, model_5,
+          type = output,
+          style = "io",
+          title = "Regression Results",
+          dep.var.labels = "Market Power Index (log)",
+          covariate.labels = ind.var.names,
+          dep.var.labels.include = FALSE,
+          omit.stat = c("adj.rsq", "n"),
+          se = list(se_1, se_2, se_3, se_4, se_5),      #  Robust se
+          align = TRUE,
+          df = FALSE,
+          intercept.bottom = FALSE,
+          star.cutoffs = c(0.05, 0.01, 0.001),
+          out = "Tables/Regression Table Teplice.doc"
+          )
+```
+
