@@ -26,7 +26,8 @@ set.seed(42)
 
 
 ```{r}
-data <- read_csv(here("data", "raw data", "Market Power Articles - Sheet2 V2.csv"))
+data <- read_csv(here("data", "raw data",
+                      "Market Power Articles - Final.csv"))
 ```
 
 Lets clean the table a bit
@@ -39,13 +40,18 @@ clean <- data %>%
   rename(mp_type = type_of_mp,            # Shorten colnames
          mp_index = market_power_index,
          industry = industry_market,
-         data_freq = data_frequency) %>% 
+         data_freq = data_frequency,
+         agg_level = aggregation_level,
+         SC_level = supply_chain_level,
+         LI = lerner_index,
+         CE = conjectural_elasticity) %>% 
   mutate(mp_index = as.numeric(mp_index))
   
 
 glimpse(clean)
 ```
 
+Check for the NA
 ```{r}
 clean %>% 
   summarise_all(~ sum(is.na(.x))) %>% 
@@ -54,7 +60,10 @@ clean %>%
 ```
 
 
-#### Clean and convert approach column
+
+### Clean and convert approach column
+
+
 
 ```{r}
 clean %>%
@@ -65,21 +74,18 @@ clean %>%
 ```
 
 
-I will filter out articles in which I am not sure
+To Factor:
 
 ```{r}
 clean <- clean %>%
-  filter(approach %in% c("PTA", "GIM", "SFA")) %>%
   mutate(approach = as_factor(approach))
 ```
 
 
 ```{r}
 clean %>%
-  group_by(approach) %>%
-  summarise(n = n()) %>%
-  mutate(prop = round(n / sum(n) * 100, 2)) %>%
-  arrange(-n)
+  ggplot(aes(approach, mp_index)) +
+  geom_jitter(width = 0.3, size = 2, alpha = 0.5)
 ```
 
 Seems correct
@@ -94,12 +100,9 @@ clean %>%
   arrange(-n)
 ```
 
-Clean misspelled rows and filter only for Oligopoly and Oligopsony 
 
 ```{r}
 clean <- clean %>%
-  mutate(mp_type = if_else(mp_type == "Ologopoly", "Oligopoly", mp_type) ) %>%
-  filter(mp_type %in% c("Oligopoly", "Oligopsony")) %>%
   mutate(mp_type = as_factor(mp_type))
 ```
 
@@ -107,13 +110,15 @@ clean <- clean %>%
 
 ```{r}
 clean %>%
-  group_by(mp_type) %>%
-  summarise(n = n()) %>%
-  mutate(prop = round(n / sum(n) * 100, 2)) %>%
-  arrange(-n)
+  ggplot(aes(approach, mp_index, color = mp_type)) +
+  geom_jitter(width = 0.3, size = 2, alpha = 0.5)
 ```
+Seems ok
 
-#### Clean and convert data_freq colum
+### Clean and convert data_freq colum
+
+
+
 
 ```{r}
 clean %>%
@@ -123,29 +128,36 @@ clean %>%
   arrange(-n)
 ```
 
-Seems fine
-
+Seems like weekly and daily are redundant
 
 ```{r}
-clean %>%
-  ggplot(aes(x = fct_reorder(data_freq, mp_index, length),
-             y = mp_index,
-             color = approach)) + 
-  geom_jitter(width = 0.3, height = 0, alpha = 0.6, size = 2) +
-  labs(x = "Industry", y="Market Power Index") +
-  theme_minimal()
+clean <- clean %>%
+  mutate(data_freq = as.factor(data_freq)) %>% 
+  mutate(data_freq_fct = fct_lump_min(data_freq, min = 10))
 ```
 
 
 
 
+```{r}
+clean %>%
+  ggplot(aes(x = fct_reorder(data_freq_fct, mp_index, length),
+             y = mp_index,
+             color = approach)) + 
+  geom_jitter(width = 0.3, height = 0, alpha = 0.3, size = 2) +
+  labs(x = "Industry", y = "Market Power Index") +
+  theme_minimal()
+```
+
+Seems fine
+
+
 Also I'll create new column with number of observations per year
 ```{r}
 clean <- clean %>%
-  mutate(data_freq = as_factor(data_freq)) %>%
   mutate(n_obs_per_year = case_when(data_freq == "Yearly" ~ 1,
                                     data_freq == "Monthly" ~ 12,
-                                    data_freq == "Quaterly" ~ 4,
+                                    data_freq == "Quarterly" ~ 4,
                                     data_freq == "Daily" ~ 365,
                                     data_freq == "Weekly" ~ 52 ) )
 ```
@@ -164,7 +176,7 @@ Most MP observations have Yearly frequency
 
 
 
-#### Clean and transform industry column
+### Clean and transform industry column
 
 ```{r}
 clean %>%
@@ -185,7 +197,7 @@ So I will write custom function which returns TRUE if column contains any value 
 # helper function. Returns TRUE if any value in vector match string
 contains_value <- function(string, vector) {
   
-  string <- str_to_lower(string) %>% str_trim(side="both")
+  string <- str_to_lower(string) %>% str_trim(side = "both")
   
   matched <- FALSE
   
@@ -198,8 +210,6 @@ contains_value <- function(string, vector) {
   
   return(matched)
 }
-
-
 ```
 
 
@@ -217,7 +227,7 @@ classify_industry <- function(non_classified_str) {
             "paultry", "pig", "slaughtering")
   cereals <- c("wheat", "oat", "triticale", "grain", "cereal", "barley", "rice",
                "milling")
-  oils <- c("canola", "oil", "fat")
+  oils <- c("canola", "oil", "fat", "margarine")
   beverages <- c("tea", "beer", "water", "brew", "coffee", "liquor", "drink",
                  "spirit", "wine", "brandy", "cocoa", "beverage")
   tobaco <- c("tobacco", "cigar")
@@ -236,7 +246,7 @@ classify_industry <- function(non_classified_str) {
         contains_value(non_classified_str, tobaco) ~ "tobacco",
         contains_value(non_classified_str, fruits) ~ "fruits",
         contains_value(non_classified_str, paper) ~ "paper",
-        contains_value(non_classified_str, bread_flour) ~ "bread or flour",
+        contains_value(non_classified_str, bread_flour) ~ "bread_or_flour",
         contains_value(non_classified_str, sugar) ~ "sugar",
         TRUE ~ "other"
                           )
@@ -256,7 +266,8 @@ clean %>%
 
 ```{r}
 clean <- clean %>% 
-  mutate(industry_fct = map_chr(industry, classify_industry))
+  mutate(industry_fct = map_chr(industry, classify_industry)) %>%
+  mutate(industry_fct = as_factor(industry_fct))
 ```
 
 
@@ -271,24 +282,7 @@ clean %>%
   mutate(prop = round(n / sum(n) * 100, 2)) %>%
   arrange(-n)
 ```
-Probably I shouldn't use groups with less then 10 observations. The results might be unreliable.
 
-#### now lets convert industry_fct to factor 
-and keep only groups with more then 10 observations
-```{r}
-clean <- clean %>%
-  mutate(industry_fct = as_factor(industry_fct)) %>%
-  mutate(industry_fct = fct_lump_min(industry_fct, min = 10,
-                                     other_level = "other"))
-```
-
-```{r}
-clean %>%
-  group_by(industry_fct) %>%
-  summarise(n = n()) %>%
-  mutate(prop = round(n / sum(n) * 100, 2)) %>%
-  arrange(-n)
-```
 
 
 ```{r}
@@ -297,12 +291,12 @@ clean %>%
              y = mp_index,
              color = approach)) + 
   geom_jitter(width = 0.25, height = 0, alpha = 0.6, size = 2) +
-  labs(x = "Industry", y="Market Power Index") +
+  labs(x = "Industry", y = "Market Power Index") +
   theme_minimal()
 ```
 
 
-Seems that there is an outlier in cereals
+Seems that there is an outlier in meat
 
 ### Clean country column 
 
@@ -400,17 +394,110 @@ clean %>%
              y = mp_index,
              color = approach)) + 
   geom_jitter(width = 0.25, height = 0, alpha = 0.6, size = 2) +
-  labs(x = "Geographical Position", y="Market Power Index") +
+  labs(x = "Geographical Position", y = "Market Power Index") +
+  theme_minimal()
+```
+### Transform Aggregation Level
+
+```{r}
+clean %>%
+  group_by(agg_level) %>%
+  summarise(n = n()) %>%
+  mutate(prop = round(n / sum(n) * 100, 2)) %>%
+  arrange(-n)
+```
+```{r}
+clean <- clean %>% 
+  mutate(agg_level = as_factor(agg_level))
+```
+
+```{r}
+clean %>%
+  ggplot(aes(x = agg_level,
+             y = mp_index,
+             color = approach)) + 
+  geom_jitter(width = 0.25, height = 0, alpha = 0.6, size = 2) +
+  labs(x = "Data aggregation level", y = "Market Power Index") +
   theme_minimal()
 ```
 
+
+### Supply Chain variable transform.
+
+```{r}
+clean %>%
+  group_by(SC_level) %>%
+  summarise(n = n()) %>%
+  mutate(prop = round(n / sum(n) * 100, 2)) %>%
+  arrange(-n)
+```
+
+```{r}
+clean <- clean %>% 
+  mutate(SC_level = as_factor(SC_level))
+```
+
+
+```{r}
+clean %>%
+  ggplot(aes(x = SC_level,
+             y = mp_index,
+             color = mp_type)) + 
+  geom_jitter(width = 0.25, height = 0, alpha = 0.4, size = 2) +
+  labs(x = "Level of supply chain", y = "Market Power Index") +
+  theme_minimal()
+```
+
+### Lerner Index variable
+
+```{r}
+clean %>%
+  group_by(LI) %>%
+  summarise(n = n()) %>%
+  mutate(prop = round(n / sum(n) * 100, 2)) %>%
+  arrange(-n)
+```
+
+```{r}
+clean <- clean %>%
+  mutate(LI = if_else(LI == "Yes", true = 1, false = 0)) %>% 
+  mutate(LI = as.integer(LI))
+```
+
+
+```{r}
+clean %>%
+  ggplot(aes(x = LI,
+             y = mp_index,
+             color = mp_type)) + 
+  geom_jitter(width = 0.25, height = 0, alpha = 0.4, size = 2) +
+  labs(x = "Level of supply chain", y = "Market Power Index") +
+  theme_minimal()
+```
+
+### Conjectual Elasticity
+
+```{r}
+clean %>%
+  group_by(CE) %>%
+  summarise(n = n()) %>%
+  mutate(prop = round(n / sum(n) * 100, 2)) %>%
+  arrange(-n)
+```
+
+
+```{r}
+clean <- clean %>%
+  mutate(CE = if_else(CE == "Yes", true = 1, false = 0)) %>% 
+  mutate(CE = as.integer(CE))
+```
 
 ### add column with number of observations in article
 
 ```{r}
 clean <- clean %>%
   separate(period, into = c("obs_start", "obs_stop"), 
-           convert =TRUE, remove = FALSE) %>%
+           convert = TRUE, remove = FALSE) %>%
   mutate(obs_years = obs_stop - obs_start) %>%
   mutate(n_of_obs = n_obs_per_year * obs_years)
 ```
@@ -428,7 +515,7 @@ Seems correct
 
 ```{r}
 clean %>%
-  ggplot(aes(x=n_of_obs, y=mp_index, color = approach)) +
+  ggplot(aes(x = n_of_obs, y = mp_index, color = approach)) +
   geom_point(size = 3, alpha = 0.4) +
   scale_x_continuous(trans = "log10") +
   theme_minimal() +
@@ -466,7 +553,7 @@ clean %>%
              y = mp_index,
              color = approach)) + 
   geom_jitter(width = 0.25, height = 0, alpha = 0.6, size = 2) +
-  labs(x = "After 2005", y="Market Power Index") +
+  labs(x = "After 2005", y = "Market Power Index") +
   theme_minimal()
 ```
 
@@ -492,10 +579,15 @@ clean <- clean %>%
                         map_lgl(industry, ~ contains_value(.x,
                         # this chunk fix the bug that cond. milk and rise were
                         # classified as perishables
-                                        c("cond", "rice", "frozen"))) ~ 0,
+                                        c("cond", "rice", "frozen",
+                                          "dried", "canned"))) ~ 0,
                                         TRUE ~ perish) )
 ```
 
+```{r}
+clean <- clean %>% 
+  mutate(perish = as.integer(perish))
+```
 
 
 check results 
@@ -503,7 +595,7 @@ check results
 ```{r}
 clean %>% 
   select(industry, perish) %>% 
-  filter(perish != 1)
+  filter(perish == 1)
 ```
 Seems correct
 
@@ -514,7 +606,7 @@ clean %>%
              y = mp_index,
              color = approach)) + 
   geom_jitter(width = 0.25, height = 0, alpha = 0.6, size = 2) +
-  labs(x = "Perishable", y="Market Power Index") +
+  labs(x = "Perishable", y = "Market Power Index") +
   theme_minimal()
 ```
 
@@ -637,7 +729,7 @@ country_year <- clean %>%
   mutate(year = as.Date(as.character(year), format = "%Y")) %>% 
   group_by(id) %>% 
   # fill sequence of of years
-  complete(year = seq(min(year), max(year), by ="year")) %>% 
+  complete(year = seq(min(year), max(year), by = "year")) %>% 
   ungroup() %>% 
   #drop start_stop columns since we don't need it
   select(id, country, year) %>% 
@@ -665,7 +757,7 @@ mean_pse <- country_year %>%
             copy = TRUE) %>% 
   # calculate an average PSE index attributed to each MPI observation
   group_by(id) %>% 
-  summarise(mean_pse = mean(pse, na.rm=TRUE)) %>% 
+  summarise(mean_pse = mean(pse, na.rm = TRUE)) %>% 
   ungroup()
 
 head(mean_pse)
@@ -677,9 +769,10 @@ head(mean_pse)
 mean(is.na(mean_pse$mean_pse))
 
 ```
-Unfortunately around 2.% of observations is missing
+Unfortunately around 5% of observations is missing
 Probably this is because many articles use too old data for the MPI estimation
-While PSE index data is available starting from 1986,
+While PSE index data is available starting from 1986, or no data for the some 
+counties
 
 
 
@@ -694,7 +787,7 @@ Now we have PSE information in out data set
 
 Plot the resulting variable 
 ```{r}
-ggplot(clean, aes(mean_pse, mp_index, color=approach)) +
+ggplot(clean, aes(mean_pse, mp_index, color = approach)) +
   geom_point(alpha = 0.7, size = 5, shape = 1) +
   theme_minimal()
 ```
@@ -714,6 +807,15 @@ Countries with high PSE
 clean %>% 
   filter(mean_pse > 60) %>% 
   select(id, country, mean_pse)
+```
+
+We are going to use log transformation of PSE later.
+Log is not defined for negative values, so to not lose any observations because of
+this issue. I will add constant to PSE. It shouldn't influence the estimation
+
+```{r}
+clean <- clean %>% 
+  mutate(mean_pse = mean_pse + 3)
 ```
 
 
@@ -774,7 +876,7 @@ mean_pp <- country_year %>%
             copy = TRUE) %>% 
   # calculate an average PP index attributed to each MPI observation
   group_by(id) %>% 
-  summarise(mean_pp = mean(PP, na.rm=TRUE)) %>% 
+  summarise(mean_pp = mean(PP, na.rm = TRUE)) %>% 
   ungroup()
 
 head(mean_pp)
@@ -788,7 +890,7 @@ clean <- clean %>%
 
 
 ```{r}
-ggplot(clean, aes(mean_pp, mp_index, color=approach)) +
+ggplot(clean, aes(mean_pp, mp_index, color = approach)) +
   geom_point(alpha = 0.7, size = 5, shape = 1) +
   theme_minimal()
 ```
@@ -884,13 +986,13 @@ join sfarm_share with main data set
 
 
 ```{r}
-sfarm <-country_year %>%
+sfarm <- country_year %>%
   left_join(sfarm_share, 
             by = c("country", "year"),
             copy = TRUE) %>% 
   # calculate an average PSE index attributed to each MPI observation
   group_by(id) %>% 
-  summarise(sfarm_share = mean(sfarm_share, na.rm=TRUE)) %>% 
+  summarise(sfarm_share = mean(sfarm_share, na.rm = TRUE)) %>% 
   ungroup()
 
 head(sfarm)
@@ -913,7 +1015,7 @@ clean <- clean %>%
 
 
 ```{r}
-ggplot(clean, aes(sfarm_share, mp_index, color=approach)) +
+ggplot(clean, aes(sfarm_share, mp_index, color = approach)) +
   geom_point(alpha = 0.4, size = 5) +
   theme_minimal()
 ```
@@ -1120,13 +1222,13 @@ head(country_ind_year)
 
 ### 
 ```{r}
-sfarm_by_cat <-country_ind_year %>%
+sfarm_by_cat <- country_ind_year %>%
   left_join(farms_full_to_join, 
             by = c("country", "industry_cat", "year"),
             copy = TRUE) %>% 
   # calculate an average SfarmShare index attributed to each MPI observation
   group_by(id) %>% 
-  summarise(sfarm_share_by_cat = mean(sfarm_share, na.rm=TRUE)) %>% 
+  summarise(sfarm_share_by_cat = mean(sfarm_share, na.rm = TRUE)) %>% 
   ungroup()
 
 head(sfarm_by_cat)
@@ -1146,7 +1248,7 @@ sum(is.na(clean$sfarm_share_by_cat))
 
 
 ```{r}
-ggplot(clean, aes(sfarm_share_by_cat, mp_index, color=approach)) +
+ggplot(clean, aes(sfarm_share_by_cat, mp_index, color = approach)) +
   geom_point(alpha = 0.4, size = 5) +
   theme_minimal()
 ```
@@ -1218,7 +1320,7 @@ db_join <- country_year %>%
             copy = TRUE) %>% 
   # calculate an average DB index attributed to each MPI observation
   group_by(id) %>% 
-  summarise(start_business = mean(score_starting_a_business, na.rm=TRUE)) %>% 
+  summarise(start_business = mean(score_starting_a_business, na.rm = TRUE)) %>% 
   ungroup()
 
 head(db_join, 10)
@@ -1236,7 +1338,7 @@ clean <- clean %>%
 
 
 ```{r}
-ggplot(clean, aes(start_business, mp_index, color=approach)) +
+ggplot(clean, aes(start_business, mp_index, color = approach)) +
   geom_point(alpha = 0.4, size = 5) +
   theme_minimal()
 ```
@@ -1308,27 +1410,6 @@ ggplot(clean, aes(edb_index, mp_index, color = approach)) +
   geom_point(alpha = 0.4, size = 5) +
   theme_minimal()
 ```
-## Column with articles weights for WLS
-
-Some articles have only one MPI while other multiple estimates
-to avoid excessive influence of articles with many MPIs we will use 
-Weighted Least squares 
-
-```{r}
-weights <- clean %>% 
-  group_by(title) %>% 
-  summarise(weights = 1 / n()) %>% 
-  ungroup()
-
-head(weights)
-```
-
-```{r}
-clean <- clean %>% 
-  inner_join(weights, by = "title")
-```
-
-
 
 
 
@@ -1336,9 +1417,14 @@ clean <- clean %>%
 ## Make an object only with columns we need for the further analysis 
 
 ```{r}
+glimpse(clean)
+```
+
+
+```{r}
 drop_col <- c("id", "year", "authors", "title", "country", "industry", "period",
               "obs_start", "obs_stop", "n_obs_per_year",
-              "obs_years", "industry_cat")
+              "obs_years", "industry_cat", "data_freq_fct")
 
 analysis <- clean %>%
   # select all except of drop_col
@@ -1348,14 +1434,20 @@ analysis <- clean %>%
          type = mp_type,
          index = mp_index,
          ind = industry_fct,
+         agg = agg_level,
+         SC = SC_level,
          count = country_fct,
          obs_n = n_of_obs) %>%
   # create dummies from category columns
   fastDummies::dummy_columns(select_columns = c("freq", "type", "ind",
-                                                "count", "app"),
+                                                "count", "app", "agg", "SC"),
                 remove_selected_columns = TRUE)
 ```
 
+
+```{r}
+glimpse(analysis)
+```
 
 
 
