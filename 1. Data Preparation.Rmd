@@ -10,7 +10,7 @@ output: github_document
 
 
 ```{r include=FALSE}
-rm(list=ls())
+rm(list = ls())
 
 library(tidyverse)
 library(readr)

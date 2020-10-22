@@ -17,10 +17,11 @@ library(lmtest)
 library(sandwich)
 library(stargazer)
 library(car)
+library(robustbase)
 
 # specify tables output. 
 # either "text" or "html"
-output <- "text"
+output <- "html"
 
 set.seed(42)
 ```
@@ -61,8 +62,8 @@ glimpse(analysis)
 
 ```{r warning=FALSE}
 analysis %>%
-  summarise_all(~ sum(is.na(.x))) %>%
-  gather(column, n_na)
+  summarise_all(~ sum(!is.na(.x))) %>%
+  gather(column, not_na)
 ```
 
 
@@ -79,13 +80,12 @@ log_lm <- lm(log(index) ~ app_PTA + app_GIM
                + type_Oligopsony 
                + ind_meat + ind_tobacco + ind_beverages + ind_dairy + ind_oils 
                + ind_fruits + ind_cereals
-               + perish
-               #+ log(mean_pse)*type_Oligopsony
+               + perish*count_n_america
+               + log(mean_pse)*type_Oligopsony
+               #+ sfarm_share_by_cat
                #+ log(mean_pp)
-               #+ log(mean_pse)*log(mean_pp)
                #+ log(mean_pse)*count_n_america
-               #+ perish*count_n_america
-               #+ perish*type_Oligopsony
+               #  + edb_index
                  , 
          data = analysis)
 
@@ -94,9 +94,6 @@ summary(log_lm)
 
 
 
-```{r}
-bptest(log_lm)
-```
 
 
 ```{r}
@@ -133,36 +130,29 @@ get_robust_se <- function(lm_model)  {
 
 ## Robust Linear Regression
 
-```{r}
-rlm <- MASS::rlm( formula(log_lm), 
-         data = analysis,
-         maxit = 100,
-         psi = "psi.bisquare") # give lowest RSS
 
+```{r}
+rlm <- lmrob(formula(log_lm),
+               data = analysis,
+               setting = "KS2014"
+               )
 summary(rlm)
 ```
 
-```{r}
-get_r2 <- function(model){  
- SSe <- sum((model$resid)^2)
- observed <- model$resid + model$fitted
- SSt <- sum((observed - mean(observed))^2)
- value <- 1 - SSe/SSt
- return(value)
-}
-```
+
 
 ```{r}
-get_r2(rlm)
+plot(rlm)
 ```
+
 
 
 
 ```{r}
 log_lm_se <- get_robust_se(log_lm)
-rlm_se <- get_robust_se(rlm)
+#rlm_se <- get_robust_se(rlm)
 
-stargazer(rlm, log_lm, se = list(rlm_se, log_lm_se),
+stargazer(rlm, log_lm, se = list(NULL, log_lm_se),
           type = "text",
           align = TRUE)
 ```
@@ -1036,7 +1026,7 @@ model_4 <- lm(update(formula(model_3), ~ . +
 se_4 <- get_robust_se(model_4)
 
 model_5 <- MASS::rlm(formula(model_4),
-                     data = analysis,
+                     data = analysis_full,
                      maxit = 100,
                      psi = "psi.bisquare")
 se_5 <- get_robust_se(model_5)
@@ -1053,7 +1043,7 @@ stargazer(model_1, model_2, model_3, model_4, model_5,
           dep.var.labels = "Market Power Index (log)",
           covariate.labels = ind.var.names,
           dep.var.labels.include = FALSE,
-          omit.stat = c("adj.rsq", "n"),
+          omit.stat = c("adj.rsq"),
           se = list(se_1, se_2, se_3, se_4, se_5),      #  Robust se
           align = TRUE,
           df = FALSE,
