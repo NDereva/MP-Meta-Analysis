@@ -21,7 +21,7 @@ library(robustbase)
 
 # specify tables output. 
 # either "text" or "html"
-output <- "html"
+output <- "text"
 
 set.seed(42)
 ```
@@ -36,9 +36,6 @@ analysis_full <- readRDS(here("data", "clean data", "Analysis_data.Rds"))
 
 ## Prepare dependent variable
 
-```{r}
-summary(analysis_full$index)
-```
 
 
 
@@ -52,12 +49,17 @@ Also there is one observation higher than 1, I will drop it.
 
 ```{r}
 analysis <- analysis_full %>%
-  filter(index < 1) %>% 
+  filter(index < 1,
+         # drop observations with conjectural variation
+         CV == 0) %>% 
   mutate(index = if_else(index < 0, true = 0, false = index)) %>% 
   mutate(index = index + 0.005)
 ```
 
 
+```{r}
+summary(analysis$index)
+```
 
 Number of articles with MP < 0.05
 ```{r}
@@ -96,17 +98,18 @@ analysis %>%
 ```{r}
 log_lm <- lm(log(index) ~ app_PTA + app_GIM 
              #+ obs_n + I(obs_n^2)
-             + LI + CE
+             + LI
              + log(obs_n) 
              + freq_Yearly + freq_Monthly      
              + count_n_america + count_europe
-             + agg_Firm + agg_World
+             + agg_Firm + agg_Region
              + SC_Processor
              + after_2005 
              + type_Oligopsony 
              + ind_meat + ind_tobacco + ind_beverages + ind_dairy + ind_oils 
              + ind_fruits + ind_cereals + ind_sugar + ind_paper + ind_bread_or_flour
              + perish
+             + WOS
              + log(mean_pse)*type_Oligopsony
              #+ sfarm_share_by_cat
              #+ log(mean_pp)
