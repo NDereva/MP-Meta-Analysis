@@ -34,17 +34,40 @@ analysis_full <- readRDS(here("data", "clean data", "Analysis_data.Rds"))
 ```
 
 
-## Remove Outliers
-lets look on the possible outliers
+## Prepare dependent variable
 
-There are few MP values which are considerable higher or lower then other.
-This might influence the reliability of research. 
-Thus, I will drop them
+```{r}
+summary(analysis_full$index)
+```
+
+
+
+MPI should be in the range between 0 and 1. in out data it is not the case.
+there are few values below zero. 
+Let us assume that negative MPI value indicate no market power.
+Thus change it to 0. 
+And since we cannot take a log of 0. we will add small constant.
+Also there is one observation higher than 1, I will drop it. 
+
 
 ```{r}
 analysis <- analysis_full %>%
-  filter(between(index, 0.005, 1))  
+  filter(index < 1) %>% 
+  mutate(index = if_else(index < 0, true = 0, false = index)) %>% 
+  mutate(index = index + 0.005)
 ```
+
+
+
+Number of articles with MP < 0.05
+```{r}
+analysis %>% 
+  mutate(low_mp = index < 0.5) %>% 
+  group_by(low_mp) %>% 
+  count()
+  
+```
+
 
 
 ## Analysis
@@ -72,20 +95,25 @@ analysis %>%
 
 ```{r}
 log_lm <- lm(log(index) ~ app_PTA + app_GIM 
-               #+ obs_n + I(obs_n^2) 
-               + log(obs_n) 
-               + freq_Yearly 
-               + count_n_america + count_europe 
-               + after_2005 
-               + type_Oligopsony 
-               + ind_meat + ind_tobacco + ind_beverages + ind_dairy + ind_oils 
-               + ind_fruits + ind_cereals
-               + perish*count_n_america
-               + log(mean_pse)*type_Oligopsony
-               #+ sfarm_share_by_cat
-               #+ log(mean_pp)
-               #+ log(mean_pse)*count_n_america
-               #  + edb_index
+             #+ obs_n + I(obs_n^2)
+             + LI + CE
+             + log(obs_n) 
+             + freq_Yearly + freq_Monthly      
+             + count_n_america + count_europe
+             + agg_Firm + agg_World
+             + SC_Processor
+             + after_2005 
+             + type_Oligopsony 
+             + ind_meat + ind_tobacco + ind_beverages + ind_dairy + ind_oils 
+             + ind_fruits + ind_cereals + ind_sugar + ind_paper + ind_bread_or_flour
+             + perish
+             + log(mean_pse)*type_Oligopsony
+             #+ sfarm_share_by_cat
+             #+ log(mean_pp)
+             #+ log(mean_pse)*count_n_america
+             #+ edb_index
+             #+ sfarm_share
+             #+ start_business
                  , 
          data = analysis)
 
@@ -148,318 +176,7 @@ plot(rlm)
 
 
 
-```{r}
-log_lm_se <- get_robust_se(log_lm)
-#rlm_se <- get_robust_se(rlm)
 
-stargazer(rlm, log_lm, se = list(NULL, log_lm_se),
-          type = "text",
-          align = TRUE)
-```
-
-
-## Weighted Least squares
-
-```{r}
-wls <-  lm((index) ~ app_PTA + app_GIM 
-               #+ poly(obs_n, 2)
-               + log(obs_n) 
-               + freq_Yearly 
-               + count_n_america + count_europe 
-               + after_2005 
-               + type_Oligopsony 
-               + ind_meat + ind_tobacco + ind_beverages + ind_dairy + ind_oils 
-               + ind_fruits + ind_cereals
-               #+ perish
-               #+ log(mean_pse) + log(mean_pp)
-                 , 
-         data = analysis,
-         weights = weights)
-
-summary(wls)
-```
-```{r}
-bptest(wls)
-```
-```{r}
-plot(wls)
-```
-
-
-```{r}
-model_1 <- lm(log(index) ~ app_PTA + app_GIM 
-               + log(obs_n) 
-               + freq_Yearly 
-               + count_n_america + count_europe 
-               + after_2005 
-               + type_Oligopsony 
-               + ind_meat + ind_tobacco + ind_beverages + ind_dairy + ind_oils 
-               + ind_fruits + ind_cereals, 
-         data = analysis)
-se_1 <- get_robust_se(model_1)
-
-model_2 <- lm((index) ~ app_PTA + app_GIM 
-               + log(obs_n) 
-               + freq_Yearly 
-               + count_n_america + count_europe 
-               + after_2005 
-               + type_Oligopsony 
-               + ind_meat + ind_tobacco + ind_beverages + ind_dairy + ind_oils 
-               + ind_fruits + ind_cereals, 
-         data = analysis, weights = weights)
-se_2 <- get_robust_se(model_2)
-
-model_3 <- lm(log(index) ~ app_PTA + app_GIM 
-               + log(obs_n)
-               + freq_Yearly 
-               + count_n_america + count_europe 
-               + after_2005 
-               + type_Oligopsony 
-               + ind_meat + ind_tobacco + ind_beverages + ind_dairy + ind_oils 
-               + ind_fruits + ind_cereals
-               + perish
-               #+ log(mean_pse) + log(mean_pp)
-         ,data = analysis)
-se_3 <- get_robust_se(model_3)
-
-
-model_4 <- lm((index) ~ app_PTA + app_GIM 
-               + log(obs_n) 
-               + freq_Yearly 
-               + count_n_america + count_europe 
-               + after_2005 
-               + type_Oligopsony 
-               + ind_meat + ind_tobacco + ind_beverages + ind_dairy + ind_oils 
-               + ind_fruits + ind_cereals
-               + perish
-               #+ log(mean_pse) + log(mean_pp)
-         ,data = analysis, weights = weights)
-se_4 <- get_robust_se(model_4)
-
-stargazer(model_1, model_2, model_3, model_4, rlm,
-          type = "text",
-          keep.stat = c("n", "rsq", "adj.rsq"),
-          title = "Analysis Results",
-          column.labels =  c("OLS 1", "WLS 1", "OLS 2", "WLS 2"),
-          #dep.var.labels = "Market Power Index (log transformed)",
-          se = list(se_1, se_2, se_3, se_4),
-          align = TRUE,
-          intercept.bottom = FALSE
-          #,out = "Tables/WLS.doc"
-          )
-```
-
-
-## Tobit model
-
-
-```{r message=FALSE}
-library(censReg)
-```
-
-```{r}
-tobit <- censReg(index ~ app_PTA + app_GIM +
-               #obs_n + I(obs_n^2) + I(obs_n^3) +
-               log(obs_n) +
-               freq_Yearly +
-               count_n_america + count_europe +
-               after_2005 +
-               type_Oligopsony +
-               ind_meat + ind_tobacco + ind_beverages + ind_dairy + ind_oils +
-               ind_fruits + ind_cereals +
-               perish +
-               log(mean_pse) #+ log(mean_pp)
-                 ,
-                 data = analysis_full)
-
-summary(tobit)
-```
-
-
-
-
-
-```{r}
-model_1 <- lm(log(index) ~ app_PTA + app_GIM + type_Oligopoly, 
-                        data = analysis)
-se_1 <- get_robust_se(model_1)
-
-model_2 <- lm(log(index) ~ app_PTA + app_GIM +
-                type_Oligopoly +
-                after_2005 + log(obs_n) +
-                freq_Yearly +
-                count_n_america + count_europe, 
-         data = analysis)
-se_2 <- get_robust_se(model_2)
-
-model_3 <- lm(log(index) ~ app_PTA + app_GIM +
-                type_Oligopoly +
-                log(obs_n) + after_2005 +
-                freq_Yearly +
-                count_n_america + count_europe +
-                ind_meat + ind_tobacco + ind_beverages + ind_dairy + ind_oils +
-                ind_fruits + ind_cereals + perish,
-         data = analysis)
-se_3 <- get_robust_se(model_3)
-
-
-model_4 <- lm(log(index) ~ app_PTA + app_GIM +
-                type_Oligopoly +
-                log(obs_n) + after_2005 +
-                count_n_america + count_europe + freq_Yearly +
-                ind_meat + ind_tobacco + ind_beverages + ind_dairy + ind_oils +
-                ind_fruits + ind_cereals + perish +
-                log(mean_pp) + log(mean_pse),
-         data = analysis)
-se_4 <- get_robust_se(model_4)
-
-model_5 <- lm(log(index) ~ app_PTA + app_GIM +
-                type_Oligopoly +
-                log(obs_n) + after_2005 +
-                count_n_america + count_europe + freq_Yearly +
-                ind_meat + ind_tobacco + ind_beverages + ind_dairy + ind_oils +
-                ind_fruits + ind_cereals + perish +
-                log(mean_pp) + log(mean_pse) + 
-                log(sfarm_share) + log(start_business),
-         data = analysis)
-se_5 <- get_robust_se(model_5)
-```
-
-
-
-## Summary tables
-```{r}
-stargazer(model_1, model_2, model_3, model_4, model_5,
-          type = "text",
-          keep.stat = c("n", "rsq", "adj.rsq"),
-          title = "Analysis Results",
-          #column.labels =  c("Model 1", "Model 2", "Model 3"),
-          dep.var.labels = "Market Power Index (log transformed)",
-          se = list(se_1, se_2, se_3, se_4, se_5),
-          align = TRUE,
-          intercept.bottom = FALSE
-          )
-```
-
-
-
-```{r}
-model_1 <- lm(log(index) ~ app_PTA + app_GIM +
-               log(obs_n) +
-               freq_Yearly +
-               count_n_america + count_europe +
-               after_2005 +
-               type_Oligopsony +
-               ind_meat + ind_tobacco + ind_beverages + ind_dairy + ind_oils +
-               ind_fruits + ind_cereals +
-               perish +
-               log(mean_pse)
-                 ,
-               data = analysis)
-se_1 <- get_robust_se(model_1)
-
-model_2 <- lm(log(index) ~ app_PTA + app_GIM +
-               obs_n + I(obs_n^2) +
-               freq_Yearly +
-               count_n_america + count_europe +
-               after_2005 +
-               type_Oligopsony +
-               ind_meat + ind_tobacco + ind_beverages + ind_dairy + ind_oils +
-               ind_fruits + ind_cereals +
-               perish +
-               log(mean_pse)
-                 ,
-         data = analysis)
-se_2 <- get_robust_se(model_2)
-
-
-
-stargazer(model_1, model_2,
-          type = "text",
-          keep.stat = c("n", "rsq", "adj.rsq"),
-          title = "Analysis Results",
-          #column.labels =  c("Model 1", "Model 2", "Model 3"),
-          dep.var.labels = "Market Power Index (log transformed)",
-          se = list(se_1, se_2),
-          align = TRUE,
-          intercept.bottom = FALSE
-          )
-
-```
-
-
-
-
-### Lets check if type there influence of industry on the MPI 
-```{r}
-industry <- matchCoefs(model_3, "ind") # extract all industry dummies
-F_test_ind <-  linearHypothesis(model_3, industry, white.adjust = "hc1")
-F_test_ind
-```
-Therefore we reject 0 hypothesis that all types of industry have zero coefficient. 
-
-
-
-
-
-
-### Determinants of each approach 
-
-
-Finally lets make a linear model for each approach and check if there is any significant differences in coefficients between them
-
-```{r}
-GIM <- lm(log(index) ~ type_Oligopoly +
-                obs_n + after_2005 +
-                freq_Yearly + freq_Quaterly +
-                count_n_america + count_europe +
-                ind_dairy + ind_meat + ind_beverages + ind_cereals + ind_oils,
-         data = subset(analysis, app_GIM == 1)) 
-
-PTA <- lm(log(index) ~ type_Oligopoly +
-                obs_n + after_2005 + 
-                freq_Yearly + freq_Quaterly +
-                count_n_america + count_europe +
-                ind_dairy + ind_meat + ind_beverages + ind_cereals + ind_oils, 
-         data = subset(analysis, app_PTA == 1))
-
-SFA <- lm(log(index) ~ type_Oligopoly +
-                obs_n + after_2005 + 
-                freq_Yearly + freq_Quaterly +
-                count_n_america + count_europe +
-                ind_dairy + ind_meat + ind_beverages + ind_cereals + ind_oils, 
-         data = subset(analysis, app_SFA == 1)) 
-```
-
-
-```{r}
-bptest(SFA)
-```
-```{r}
-bptest(PTA)
-```
-
-```{r}
-bptest(GIM)
-```
-
-According to bptest there is no evidence of heteroscadasticity, so we can use default SE
-
-
-```{r}
-stargazer(GIM, PTA, SFA,
-          type = "text",
-          omit.stat = c("f", "ser"), 
-          title = "Analysis Results",
-          column.labels =  c("GIM", "PTA", "SFA"),
-          dep.var.labels = "Market Power Index (log transformed)",
-          align = TRUE,
-          intercept.bottom = FALSE
-          )
-```
-
-
-I think I am done with the analysis
 
 
 # Summary Tables
@@ -488,16 +205,11 @@ summary table of all articles used in analysis
 
 
 
-```{r}
-#replace misspeled value
-clean <- clean %>%
-  mutate(data_freq = str_replace(data_freq, "Quaterly", "Quarterly")) 
-```
 
 ### Table 1. List of studies
 ```{r}
 table_1 <- clean %>%
-  group_by(article_ref, approach, mp_type, data_freq, period) %>%
+  group_by(article_ref, approach, SC_level, mp_type, data_freq, period) %>%
   summarise(N = n()) %>%
   adorn_totals("row")
 
@@ -775,21 +487,7 @@ stargazer(model_1, model_2, model_3, model_4, model_5,
 
 ### Table 8: Methods comparison 
 
-```{r}
-stargazer(PTA, GIM, SFA,
-          type = output,
-          style = "aer",
-          #omit.stat=c("f", "ser", "n"), 
-          title = "Methods Comparison",
-          dep.var.labels = "Market Power Index",
-          column.labels =  c("PTA", "GIM", "SFA"),
-          covariate.labels = ind.var.names,
-          align = TRUE,
-          df = FALSE,
-          intercept.bottom = FALSE,
-          out = "Tables/8. Method Comparison.doc"
-          )
-```
+
 
 
 ```{r}
