@@ -507,7 +507,7 @@ model_4 <- lm(update(formula(model_3), ~ . +
 se_4 <- get_robust_se(model_4)
 
 model_5 <- MASS::rlm(formula(model_4),
-                     data = analysis_full,
+                     data = analysis,
                      maxit = 100,
                      psi = "psi.bisquare")
 se_5 <- get_robust_se(model_5)
@@ -606,8 +606,4 @@ stargazer(model_1, model_2, model_3, model_4, model_5, model_6,
 ```
 
 
-
-```{r}
-summary(lm(formula(model_4), data = analysis))
-```
 
