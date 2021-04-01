@@ -1474,6 +1474,13 @@ glimpse(analysis)
 ```{r}
 saveRDS(clean, file = here("data", "clean data", "Full_data.Rds"))
 saveRDS(analysis, file = here("data", "clean data", "Analysis_data.Rds"))
+
+write_csv(clean, file = here("data", "clean data", "Full_data.csv"))
+write_csv(analysis, file = here("data", "clean data", "Analysis_data.csv"))
 ```
 
+
+```{r}
+sessionInfo()
+```
 
